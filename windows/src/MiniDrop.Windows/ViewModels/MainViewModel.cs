@@ -345,9 +345,14 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     public async Task DeleteAsync(string messageId)
     {
-        if (!EnsureConfigured())
+        // 未发布的消息只删本机（无需网络/配置）；已发布的要走全端删除协议
+        var unpublished = _jobs.Get(messageId) is not null;
+        var text = unpublished
+            ? "这条消息还没有上传成功，将从本机删除（不可恢复）。"
+            : "删除这条消息？\n\n将从所有设备删除（不可恢复）。";
+        if (!unpublished && !EnsureConfigured())
             return;
-        var confirm = MessageBox.Show("删除这条消息？\n\n将从所有设备删除（不可恢复）。", "MiniDrop",
+        var confirm = MessageBox.Show(text, "MiniDrop",
             MessageBoxButton.YesNo, MessageBoxImage.Warning);
         if (confirm != MessageBoxResult.Yes)
             return;

@@ -155,6 +155,7 @@ public sealed class DeleteService(
 {
     private readonly MessageDao _messages = new(db);
     private readonly FileDao _files = new(db);
+    private readonly JobDao _jobs = new(db);
 
     public sealed record DeleteResult(bool Ok, string? ErrorText);
 
@@ -171,7 +172,29 @@ public sealed class DeleteService(
         foreach (var f in _files.GetByMessage(messageId))
             transfers.CancelDownload(f.FileId);
 
-        // 2) PUT 墓碑 = 删除 commit（墓碑月份目录惰性创建）
+        // 2) 未发布的消息（上传失败/等待中/上传中）：远端没有消息对象，无需墓碑，本地删除即可。
+        //    半截文件对象按设计 §3.5 接受为孤儿。
+        var job = _jobs.Get(messageId);
+        if (job is not null)
+        {
+            if (job.State == JobState.Uploading)
+            {
+                // 等待泵释放 claim（最多 2 秒）
+                for (var i = 0; i < 20; i++)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var current = _jobs.Get(messageId);
+                    if (current is null || current.State != JobState.Uploading)
+                        break;
+                    await Task.Delay(100, ct).ConfigureAwait(false);
+                }
+            }
+            coordinator.DeleteLocalMessage(messageId);
+            log.Info("delete", "deleted unpublished message locally");
+            return new DeleteResult(true, null);
+        }
+
+        // 3) PUT 墓碑 = 删除 commit（墓碑月份目录惰性创建）
         var mkTomb = await dav().EnsureDirectoryAsync(RemotePaths.TombstonesMonthDir(msg.RemoteMonth)).ConfigureAwait(false);
         if (!mkTomb.Ok)
         {

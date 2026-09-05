@@ -167,5 +167,25 @@ public class DeleteAndMaintenanceTests : IDisposable
         Assert.Null(_h.Jobs.Get(id));
     }
 
+    [Fact]
+    public async Task Deleting_UnpublishedMessage_IsLocalOnly_NoTombstone()
+    {
+        // 上传因 AUTH 失败（凭据错误）→ 消息从未发布；删除不应发任何远端请求
+        var path = _h.MakeTempFile("never.bin", AppHarness.Bytes(16));
+        var send = await _h.Send.EnqueueFilesAsync([path]);
+        var id = send.MessageId!;
+        _h.Server.FailNext("PUT", 401, 1, "/MiniDrop/files/");
+        await _h.Pump.DrainAsync(_ct);
+        Assert.Equal(JobState.Failed, _h.Jobs.Get(id)!.State);
+
+        var result = await _h.Delete.DeleteAsync(id, _ct);
+        Assert.True(result.Ok, result.ErrorText);
+        Assert.False(_h.Messages.Exists(id), "本地行应删除");
+        Assert.Null(_h.Jobs.Get(id));
+        var tombstonePuts = _h.Server.CountRequests("PUT /MiniDrop/tombstones/");
+        Assert.Equal(0, tombstonePuts);
+        Assert.False(_h.Server.Exists($"/MiniDrop/tombstones/{UlidClock.MonthOf(id)}/{id}.json"));
+    }
+
     public void Dispose() => _h.Dispose();
 }

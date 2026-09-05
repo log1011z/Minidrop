@@ -15,6 +15,7 @@ public partial class App : Application
 {
     private SingleInstance? _singleInstance;
     private TaskbarIcon? _tray;
+    private byte[]? _trayIconData;
     private UploadPump? _pump;
     private Database? _db;
     private MainViewModel? _mainVm;
@@ -85,16 +86,36 @@ public partial class App : Application
         _singleInstance.StartServer((files, text) =>
             Dispatcher.BeginInvoke(() => _ = _mainVm?.SendFilesAsync(files, text)));
 
-        // 托盘（图标来自内嵌 app.ico；左键打开、右键菜单 打开/刷新/设置/退出）
+        // 托盘（代码创建的 TaskbarIcon 必须 ForceCreate 才会真正注册到通知区域）
         _tray = new TaskbarIcon
         {
             ToolTipText = "MiniDrop — 点击打开，右键更多",
-            IconSource = new System.Windows.Media.Imaging.BitmapImage(
-                new Uri("pack://application:,,,/app.ico")),
-            Visibility = Visibility.Visible,
         };
+        try
+        {
+            var resource = Application.GetResourceStream(new Uri("pack://application:,,,/app.ico"))
+                ?? throw new InvalidOperationException("app.ico resource missing");
+            using var ms = new System.IO.MemoryStream();
+            resource.Stream.CopyTo(ms);
+            _trayIconData = ms.ToArray();
+            _tray.Icon = new System.Drawing.Icon(new System.IO.MemoryStream(_trayIconData));
+        }
+        catch (Exception iconEx)
+        {
+            Log.Error("tray", $"icon load failed: {iconEx.GetType().Name}");
+        }
         _tray.LeftClickCommand = new RelayCommand(ShowMainWindow);
         BuildTrayMenu();
+        _tray.Visibility = Visibility.Visible;
+        try
+        {
+            _tray.ForceCreate();
+        }
+        catch (Exception createEx)
+        {
+            Log.Error("tray", $"force create failed: {createEx.GetType().Name}");
+        }
+        Log.Info("tray", $"created={_tray.IsCreated}");
 
         // 主窗口（热键在窗口 OnSourceInitialized 注册）
         _mainVm = new MainViewModel();
