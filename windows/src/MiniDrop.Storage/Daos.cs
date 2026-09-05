@@ -19,6 +19,7 @@ public sealed class MetaDao(Database db)
         return v is string s ? s : null;
     }
 
+    /// <summary>meta.value 列 NOT NULL：空值存空串；读取方用 IsNullOrEmpty 判断。</summary>
     public void Set(string key, string? value)
     {
         using var cmd = db.Connection.Cmd(null,
@@ -27,7 +28,7 @@ public sealed class MetaDao(Database db)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value
             """);
         cmd.Set("$k", key);
-        cmd.Set("$v", value);
+        cmd.Set("$v", value ?? "");
         cmd.ExecuteNonQuery();
     }
 

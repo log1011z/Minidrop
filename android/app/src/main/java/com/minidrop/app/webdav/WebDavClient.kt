@@ -97,6 +97,8 @@ class WebDavClient(
         .connectTimeout(timeoutSeconds, TimeUnit.SECONDS)
         .readTimeout(timeoutSeconds, TimeUnit.SECONDS)
         .writeTimeout(timeoutSeconds, TimeUnit.SECONDS)
+        // WebDAV 只连坚果云（国内直连必通），绕过系统代理，避免 VPN 接管导致连接失败
+        .proxy(java.net.Proxy.NO_PROXY)
         .authenticator(object : Authenticator {
             override fun authenticate(route: Route?, response: Response): Request? {
                 if (response.request.header("Authorization") != null) return null

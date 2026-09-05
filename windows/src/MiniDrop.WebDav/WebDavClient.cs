@@ -41,6 +41,8 @@ public sealed class WebDavClient : IDisposable
             AllowAutoRedirect = true,
             Credentials = new NetworkCredential(options.Account, options.PasswordProvider() ?? ""),
             PreAuthenticate = true,
+            // WebDAV 只连坚果云（国内直连必通），绕过系统代理，避免 VPN/代理接管导致连接失败
+            UseProxy = false,
         };
         _http = new HttpClient(handler) { Timeout = options.Timeout };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd(options.UserAgent);
@@ -278,12 +280,20 @@ public sealed class WebDavClient : IDisposable
         return new DavResult(DavStatus.ClientError, code);
     }
 
-    private static DavResult FromException(Exception e) => e switch
+    private static DavResult FromException(Exception e)
     {
-        OperationCanceledException => new DavResult(DavStatus.NetworkError, null, Detail: "timeout/cancelled"),
-        HttpRequestException => new DavResult(DavStatus.NetworkError, null, Detail: e.Message),
-        _ => new DavResult(DavStatus.ProtocolError, null, Detail: e.GetType().Name),
-    };
+        // 递归取最内层异常：真实原因（DNS/代理/连接重置/TLS）在内层
+        var root = e;
+        while (root.InnerException is { } inner)
+            root = inner;
+        var kind = e is OperationCanceledException
+            ? DavStatus.NetworkError
+            : e is HttpRequestException ? DavStatus.NetworkError : DavStatus.ProtocolError;
+        var detail = e is OperationCanceledException
+            ? "timeout/cancelled"
+            : $"{root.GetType().Name}: {root.Message}";
+        return new DavResult(kind, null, Detail: detail);
+    }
 
     public void Dispose() => _http.Dispose();
 }

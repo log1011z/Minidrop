@@ -49,6 +49,23 @@ class MiniDropApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+
+        // 崩溃日志：写入私有目录，下次启动在应用内展示（便于远程诊断）
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                java.io.File(filesDir, "crash-latest.txt").writeText(
+                    buildString {
+                        appendLine("time=" + java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date()))
+                        appendLine("thread=" + thread.name)
+                        appendLine(android.util.Log.getStackTraceString(throwable))
+                    },
+                )
+            } catch (_: Exception) {
+            }
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
+
         db = MiniDropDatabase.build(this)
         settings = SettingsStore(this)
         recovery = StartupRecovery(this, db)

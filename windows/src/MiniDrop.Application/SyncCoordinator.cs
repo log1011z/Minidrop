@@ -175,8 +175,12 @@ public sealed class SyncCoordinator(
             if (_meta.Get(MetaDao.HistoryInitialized) != "1")
                 return new LoadOlderOutcome(0, 0, NoMore: true, ScanError: false);
 
-            var month = _meta.Get(MetaDao.HistoryCursorMonth) ?? UlidClock.CurrentUtcMonth(DateTimeOffset.UtcNow);
+            var month = _meta.Get(MetaDao.HistoryCursorMonth);
+            if (string.IsNullOrEmpty(month))
+                month = UlidClock.CurrentUtcMonth(DateTimeOffset.UtcNow);
             var before = _meta.Get(MetaDao.HistoryCursorBeforeId);
+            if (string.IsNullOrEmpty(before))
+                before = null; // meta.value NOT NULL：空游标以空串存储
             var cutoffMonth = UlidClock.ExpiryMonth(DateTimeOffset.UtcNow);
 
             var selected = new List<RemoteRef>();

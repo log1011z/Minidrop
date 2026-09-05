@@ -3,32 +3,41 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:MiniDrop.Windows.ViewModels"
         Title="MiniDrop" Width="520" Height="680"
-        MinWidth="380" MinHeight="420"
+        MinWidth="400" MinHeight="440"
+        FontFamily="Microsoft YaHei UI" FontSize="13"
         WindowStartupLocation="CenterScreen"
         AllowDrop="True"
         PreviewKeyDown="Window_PreviewKeyDown"
         Closing="Window_Closing"
         Drop="Window_Drop"
-        Background="#FAFAFA">
+        Background="#F5F6F8">
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
+        <!-- 文件行：统一圆角 8、间距 -->
         <DataTemplate DataType="{x:Type vm:FileItemViewModel}">
-            <Border Margin="0,2" Padding="6,4" Background="#EEF2FF" CornerRadius="6">
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding SizeText, StringFormat=' · {0}'}" Foreground="#666" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding StateText}" Foreground="#2563EB" Margin="6,0,0,0" VerticalAlignment="Center" />
-                    <Button Content="{Binding ActionText}" Command="{Binding ActionCommand}"
-                            Margin="8,0,0,0" Padding="6,1" VerticalAlignment="Center" />
-                </StackPanel>
+            <Border Margin="0,3" Padding="10,7" Background="#F3F4F6" CornerRadius="8">
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="{Binding ActionText}" Command="{Binding ActionCommand}"
+                            Padding="10,3" VerticalAlignment="Center" />
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center"
+                                   MaxWidth="260" TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding Name}" />
+                        <TextBlock Text="{Binding SizeText, StringFormat=' · {0}'}" Foreground="#6B7280"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding StateText}" Foreground="{StaticResource AccentBrush}"
+                                   Margin="8,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </DockPanel>
             </Border>
         </DataTemplate>
 
+        <!-- 消息卡：统一圆角 10、内边距 12 -->
         <DataTemplate DataType="{x:Type vm:MessageViewModel}">
-            <Border Margin="8,4" Padding="10,6" Background="White" CornerRadius="8"
-                    BorderBrush="#E5E7EB" BorderThickness="1">
+            <Border Margin="12,5" Padding="12,9" Background="White" CornerRadius="10"
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
                 <Border.ContextMenu>
                     <!-- ContextMenu 不在可视树内：经 PlacementTarget 取回消息的 DataContext -->
                     <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
@@ -36,18 +45,23 @@
                     </ContextMenu>
                 </Border.ContextMenu>
                 <StackPanel>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding TimeText}" Foreground="#888" />
-                        <TextBlock Text="{Binding DeviceName, StringFormat=' {0}'}" Foreground="#888" />
-                        <TextBlock Text="{Binding StatusText}" Foreground="#2563EB" Margin="8,0,0,0" />
-                        <Button Content="重试" Command="{Binding DataContext.RetryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                CommandParameter="{Binding Id}" Padding="4,0" Margin="8,0,0,0"
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="重试"
+                                Command="{Binding DataContext.RetryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding Id}" Padding="10,2"
                                 Visibility="{Binding ShowRetry, Converter={StaticResource BoolToVis}}" />
-                    </StackPanel>
-                    <TextBlock Text="{Binding ErrorText}" Foreground="#DC2626" Margin="0,2,0,0"
-                               TextWrapping="Wrap" Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding TimeText}" Foreground="#9CA3AF" FontSize="12" />
+                            <TextBlock Text="{Binding DeviceName, StringFormat=' · {0}'}" Foreground="#9CA3AF" FontSize="12" />
+                            <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource AccentBrush}"
+                                       FontSize="12" Margin="10,0,0,0" />
+                        </StackPanel>
+                    </DockPanel>
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" Margin="0,3,0,0"
+                               FontSize="12" TextWrapping="Wrap"
+                               Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
 
-                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Margin="0,4,0,0"
+                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Margin="0,5,0,0" LineHeight="20"
                                Visibility="{Binding HasText, Converter={StaticResource BoolToVis}}">
                         <TextBlock.ContextMenu>
                             <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
@@ -57,7 +71,7 @@
                         </TextBlock.ContextMenu>
                     </TextBlock>
 
-                    <ItemsControl ItemsSource="{Binding Files}" Margin="0,4,0,0" />
+                    <ItemsControl ItemsSource="{Binding Files}" Margin="0,6,0,0" />
                 </StackPanel>
             </Border>
         </DataTemplate>
@@ -73,9 +87,9 @@
         </Grid.RowDefinitions>
 
         <!-- 顶栏 -->
-        <Border Grid.Row="0" Background="White" Padding="12,8" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1">
+        <Border Grid.Row="0" Background="White" Padding="16,10" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
             <DockPanel>
-                <TextBlock Text="MiniDrop" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" />
+                <TextBlock Text="MiniDrop" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" Foreground="#111827" />
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Content="⟳ 刷新 (F5)" Command="{Binding RefreshAsyncCommand}" />
                     <Button Content="⚙ 设置" Click="SettingsButton_Click" />
@@ -84,13 +98,14 @@
         </Border>
 
         <!-- 提示与加载更早 -->
-        <StackPanel Grid.Row="1" Margin="12,8,12,0">
-            <Border Background="#FEF3C7" Padding="8,4" CornerRadius="6"
+        <StackPanel Grid.Row="1" Margin="16,10,16,0">
+            <Border Background="#FEF3C7" Padding="10,6" CornerRadius="8"
                     Visibility="{Binding ShowUnconfigured, Converter={StaticResource BoolToVis}}">
                 <TextBlock Text="请先完成 WebDAV 设置（右上角 ⚙）" Foreground="#92400E" />
             </Border>
             <Button Content="加载更早" Command="{Binding LoadOlderAsyncCommand}" HorizontalAlignment="Center"
-                    Margin="0,6,0,0" Visibility="{Binding ShowLoadOlder, Converter={StaticResource BoolToVis}}" />
+                    Margin="0,8,0,0" Padding="16,5"
+                    Visibility="{Binding ShowLoadOlder, Converter={StaticResource BoolToVis}}" />
         </StackPanel>
 
         <!-- 时间线 -->
@@ -102,24 +117,27 @@
                  VirtualizingPanel.VirtualizationMode="Recycling" />
 
         <!-- 输入栏 -->
-        <Border Grid.Row="3" Background="White" Padding="12,8" BorderBrush="#E5E7EB" BorderThickness="0,1,0,0">
+        <Border Grid.Row="3" Background="White" Padding="16,10" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
             <StackPanel>
                 <DockPanel>
-                    <Button DockPanel.Dock="Right" Content="发送 ↑" Command="{Binding SendCommand}" FontWeight="SemiBold" />
+                    <Button DockPanel.Dock="Right" Content="发送 ↑" Command="{Binding SendCommand}" FontWeight="SemiBold"
+                            MinWidth="76" />
                     <Button DockPanel.Dock="Right" Content="📎 添加文件" Click="AddFilesButton_Click" Margin="0,0,8,0" />
                     <TextBox x:Name="InputBox" Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
-                             AcceptsReturn="True" TextWrapping="Wrap" MinHeight="44" MaxHeight="140"
-                             VerticalScrollBarVisibility="Auto"
+                             AcceptsReturn="True" TextWrapping="Wrap" MinHeight="46" MaxHeight="140"
+                             VerticalContentAlignment="Top"
+                             VerticalScrollBarVisibility="Auto" Margin="0,0,8,0"
                              KeyDown="InputBox_KeyDown" PreviewKeyDown="InputBox_PreviewKeyDown" />
                 </DockPanel>
                 <TextBlock Text="支持拖入文件、Ctrl+V 粘贴文件或文字、右下角添加文件" FontSize="11"
-                           Foreground="#9CA3AF" Margin="0,4,0,0" />
+                           Foreground="#9CA3AF" Margin="2,5,0,0" />
             </StackPanel>
         </Border>
 
         <!-- 状态栏 -->
-        <Border Grid.Row="4" Background="#F3F4F6" Padding="12,4">
-            <TextBlock Text="{Binding StatusText}" Foreground="#666" TextTrimming="CharacterEllipsis" />
+        <Border Grid.Row="4" Background="#ECEDF0" Padding="16,5">
+            <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource MutedBrush}"
+                       TextTrimming="CharacterEllipsis" FontSize="12" />
         </Border>
     </Grid>
 </Window>
