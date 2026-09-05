@@ -158,12 +158,16 @@ public partial class MainViewModel : ObservableObject
         RefreshAsyncCommand = new AsyncRelayCommand(RefreshAsync, () => !Busy);
         LoadOlderAsyncCommand = new AsyncRelayCommand(LoadOlderAsync, () => !Busy);
         SendCommand = new AsyncRelayCommand(SendInputAsync, () => !Busy);
+        DeleteCommand = new AsyncRelayCommand<string>(DeleteAsync);
+        RetryCommand = new AsyncRelayCommand<string>(RetryAsync);
         ReloadFromDb();
     }
 
     public IAsyncRelayCommand RefreshAsyncCommand { get; }
     public IAsyncRelayCommand LoadOlderAsyncCommand { get; }
     public IAsyncRelayCommand SendCommand { get; }
+    public IAsyncRelayCommand DeleteCommand { get; }
+    public IAsyncRelayCommand RetryCommand { get; }
 
     // ---------- 本地时间线（打开只读本地，不请求 WebDAV） ----------
 
@@ -331,7 +335,6 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
     public async Task RetryAsync(string messageId)
     {
         if (_jobs.Requeue(messageId))
@@ -342,7 +345,6 @@ public partial class MainViewModel : ObservableObject
         await Task.CompletedTask;
     }
 
-    [RelayCommand]
     public async Task DeleteAsync(string messageId)
     {
         // 未发布的消息只删本机（无需网络/配置）；已发布的要走全端删除协议

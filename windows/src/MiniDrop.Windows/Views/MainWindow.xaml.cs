@@ -90,6 +90,23 @@ public partial class MainWindow : Window
         }
     }
 
+    // ContextMenu 不在可视树内，命令绑定取不到窗口 VM —— 改用 Click + DataContext
+    private void DeleteMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is MessageViewModel message)
+        {
+            _ = _vm.DeleteAsync(message.Id);
+        }
+    }
+
+    private void CopyMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is MessageViewModel message && message.HasText)
+        {
+            _vm.CopyText(message.Text);
+        }
+    }
+
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape)

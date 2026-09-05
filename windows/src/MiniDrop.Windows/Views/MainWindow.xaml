@@ -30,10 +30,9 @@
             <Border Margin="8,4" Padding="10,6" Background="White" CornerRadius="8"
                     BorderBrush="#E5E7EB" BorderThickness="1">
                 <Border.ContextMenu>
-                    <ContextMenu>
-                        <MenuItem Header="删除"
-                                  Command="{Binding DataContext.DeleteMessageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                  CommandParameter="{Binding Id}" />
+                    <!-- ContextMenu 不在可视树内：经 PlacementTarget 取回消息的 DataContext -->
+                    <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                        <MenuItem Header="删除" Click="DeleteMenuItem_Click" />
                     </ContextMenu>
                 </Border.ContextMenu>
                 <StackPanel>
@@ -41,7 +40,7 @@
                         <TextBlock Text="{Binding TimeText}" Foreground="#888" />
                         <TextBlock Text="{Binding DeviceName, StringFormat=' {0}'}" Foreground="#888" />
                         <TextBlock Text="{Binding StatusText}" Foreground="#2563EB" Margin="8,0,0,0" />
-                        <Button Content="重试" Command="{Binding DataContext.RetryMessageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        <Button Content="重试" Command="{Binding DataContext.RetryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                 CommandParameter="{Binding Id}" Padding="4,0" Margin="8,0,0,0"
                                 Visibility="{Binding ShowRetry, Converter={StaticResource BoolToVis}}" />
                     </StackPanel>
@@ -51,13 +50,9 @@
                     <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Margin="0,4,0,0"
                                Visibility="{Binding HasText, Converter={StaticResource BoolToVis}}">
                         <TextBlock.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="复制"
-                                          Command="{Binding DataContext.CopyTextCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                          CommandParameter="{Binding Text}" />
-                                <MenuItem Header="删除"
-                                          Command="{Binding DataContext.DeleteMessageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                          CommandParameter="{Binding Id}" />
+                            <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                <MenuItem Header="复制" Click="CopyMenuItem_Click" />
+                                <MenuItem Header="删除" Click="DeleteMenuItem_Click" />
                             </ContextMenu>
                         </TextBlock.ContextMenu>
                     </TextBlock>
