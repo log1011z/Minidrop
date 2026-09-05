@@ -1,5 +1,6 @@
 package com.minidrop.app.webdav
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -60,14 +61,15 @@ class RequestGate {
     private val counts = ConcurrentHashMap<String, Long>()
 
     suspend fun <T> run(kind: String, uploadKind: Boolean, block: suspend () -> T): T {
+        // Android 主线程禁止网络：所有请求统一切换到 IO 线程
         val counted: suspend (T) -> T = { v ->
             counts.merge(kind, 1, Long::plus)
             v
         }
         return if (uploadKind) {
-            upload.withLock { counted(block()) }
+            upload.withLock { withContext(Dispatchers.IO) { counted(block()) } }
         } else {
-            metadata.withPermit { counted(block()) }
+            metadata.withPermit { withContext(Dispatchers.IO) { counted(block()) } }
         }
     }
 
