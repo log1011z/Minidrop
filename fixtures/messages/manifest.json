@@ -1,0 +1,38 @@
+{
+  "schema_version_note": "manifest 列出全部消息夹具；invalid 项的 reason 必须与 docs/PROTOCOL.md §4.2 拒绝码一致",
+  "valid": [
+    { "file": "valid_text_only.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS" },
+    { "file": "valid_with_file.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS" },
+    { "file": "valid_multi_files.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS" },
+    { "file": "valid_unknown_fields.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS" },
+    { "file": "valid_text_trim.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS" },
+    { "file": "valid_empty_text_with_file.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS" },
+    { "file": "valid_file_no_sha_mime.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS" },
+    { "file": "valid_boundary_lengths.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS" }
+  ],
+  "invalid": [
+    { "file": "invalid_version_2.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "SCHEMA_VERSION" },
+    { "file": "invalid_id_mismatch.json", "filename_ulid": "01M1D47Z00ABCDEFGHJKMNPQRS", "reason": "ID_MISMATCH" },
+    { "file": "invalid_bad_ulid.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "BAD_ULID" },
+    { "file": "invalid_device_id.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "BAD_DEVICE" },
+    { "file": "invalid_device_name_empty.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "BAD_DEVICE_NAME" },
+    { "file": "invalid_device_name_long.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "BAD_DEVICE_NAME" },
+    { "file": "invalid_created_at.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "BAD_CREATED_AT" },
+    { "file": "invalid_too_many_files.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "TOO_MANY_FILES" },
+    { "file": "invalid_dup_file_id.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "DUP_FILE_ID" },
+    { "file": "invalid_file_id_not_uuid.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "BAD_FILE_ID" },
+    { "file": "invalid_file_name_slash.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "BAD_FILE_NAME" },
+    { "file": "invalid_file_name_too_long.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "BAD_FILE_NAME" },
+    { "file": "invalid_file_size_negative.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "BAD_FILE_SIZE" },
+    { "file": "invalid_file_size_over.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "BAD_FILE_SIZE" },
+    { "file": "invalid_mime_too_long.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "BAD_MIME" },
+    { "file": "invalid_mime_non_ascii.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "BAD_MIME" },
+    { "file": "invalid_sha_upper.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "BAD_SHA256" },
+    { "file": "invalid_sha_short.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "BAD_SHA256" },
+    { "file": "invalid_empty_null_both.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "EMPTY_CONTENT" },
+    { "file": "invalid_blank_text_no_files.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "EMPTY_CONTENT" },
+    { "file": "invalid_empty_files_array.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "EMPTY_CONTENT" },
+    { "file": "invalid_bad_json.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "BAD_JSON" },
+    { "file": "invalid_wrong_types.json", "filename_ulid": "01M1R44YMRABCDEFGHJKMNPQRS", "reason": "BAD_JSON" }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "id": "01M1R44YMRABCDEFGHJKMNPQRS",
+  "device_id": "be7f3a2c-1b9d-4c2e-8f0a-3d5e6b7a9c1d",
+  "device_name": "Desktopxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "created_at": "2026-09-05T06:30:00.123Z",
+  "text": "边界长度：device_name 32 字符；name 200 字节；mime 127 字符；size 恰为 500MB",
+  "files": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果结果abcdefgh",
+      "size": 524288000,
+      "mime": "application/x-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+    }
+  ]
+}

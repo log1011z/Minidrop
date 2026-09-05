@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "id": "01M1R44YMRABCDEFGHJKMNPQRS",
+  "device_id": "not-a-uuid",
+  "device_name": "Desktop",
+  "created_at": "2026-09-05T06:30:00.123Z",
+  "text": "device_id 非法",
+  "files": null
+}
