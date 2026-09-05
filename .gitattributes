@@ -1,0 +1,4 @@
+* text=auto
+*.png binary
+*.jar binary
+*.sha256 text

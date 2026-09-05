@@ -1,0 +1,49 @@
+# ===== .NET / Visual Studio =====
+bin/
+obj/
+out/
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.pdb
+*.mdf
+*.ldf
+TestResults/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+artifacts/
+*.DotSettings.user
+project.lock.json
+
+# NuGet
+*.nupkg
+packages/
+.nuget/
+
+# ===== Android / Gradle / IntelliJ =====
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/*.iml
+android/captures/
+android/.externalNativeBuild/
+android/.cxx/
+*.apk
+*.aab
+*.keystore
+
+# ===== M0 =====
+m0/**/m0-results*.md
+
+# ===== misc =====
+Thumbs.db
+Desktop.ini
+*.log
+.dotnet/
