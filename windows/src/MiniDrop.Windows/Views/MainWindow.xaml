@@ -108,13 +108,18 @@
 
         <!-- 输入栏 -->
         <Border Grid.Row="3" Background="White" Padding="12,8" BorderBrush="#E5E7EB" BorderThickness="0,1,0,0">
-            <DockPanel>
-                <Button DockPanel.Dock="Right" Content="发送 ↑" Command="{Binding SendCommand}" FontWeight="SemiBold" />
-                <TextBox x:Name="InputBox" Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
-                         AcceptsReturn="True" TextWrapping="Wrap" MinHeight="44" MaxHeight="140"
-                         VerticalScrollBarVisibility="Auto"
-                         KeyDown="InputBox_KeyDown" PreviewKeyDown="InputBox_PreviewKeyDown" />
-            </DockPanel>
+            <StackPanel>
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="发送 ↑" Command="{Binding SendCommand}" FontWeight="SemiBold" />
+                    <Button DockPanel.Dock="Right" Content="📎 添加文件" Click="AddFilesButton_Click" Margin="0,0,8,0" />
+                    <TextBox x:Name="InputBox" Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
+                             AcceptsReturn="True" TextWrapping="Wrap" MinHeight="44" MaxHeight="140"
+                             VerticalScrollBarVisibility="Auto"
+                             KeyDown="InputBox_KeyDown" PreviewKeyDown="InputBox_PreviewKeyDown" />
+                </DockPanel>
+                <TextBlock Text="支持拖入文件、Ctrl+V 粘贴文件或文字、右下角添加文件" FontSize="11"
+                           Foreground="#9CA3AF" Margin="0,4,0,0" />
+            </StackPanel>
         </Border>
 
         <!-- 状态栏 -->

@@ -5,10 +5,14 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <RootNamespace>MiniDrop.Windows</RootNamespace>
-    <ApplicationIcon />
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <AssemblyTitle>MiniDrop</AssemblyTitle>
     <Product>MiniDrop</Product>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="app.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />

@@ -12,6 +12,7 @@ public partial class MainWindow : Window
 {
     private readonly MainViewModel _vm;
     private readonly DispatcherTimer _pollTimer;
+    private bool _hintedOnce;
     public required App App { get; init; }
 
     public MainWindow(MainViewModel vm)
@@ -19,6 +20,12 @@ public partial class MainWindow : Window
         InitializeComponent();
         _vm = vm;
         DataContext = vm;
+        try
+        {
+            Icon = System.Windows.Media.Imaging.BitmapFrame.Create(
+                new Uri("pack://application:,,,/app.ico"));
+        }
+        catch { /* 图标加载失败不影响主流程 */ }
 
         _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _pollTimer.Tick += (_, _) => _vm.PollJobStates();
@@ -59,9 +66,28 @@ public partial class MainWindow : Window
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        // 关闭按钮 → 隐藏到托盘（§9.4）
+        // 关闭按钮 → 隐藏到托盘（§9.4）；首次关闭给出气泡提示
         e.Cancel = true;
         HideToTray();
+        if (!_hintedOnce)
+        {
+            _hintedOnce = true;
+            App.ShowTrayBalloon("MiniDrop 仍在后台运行",
+                "点击托盘图标重新打开窗口；右键托盘图标 → 退出");
+        }
+    }
+
+    private void AddFilesButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "选择要投递的文件",
+            Multiselect = true,
+        };
+        if (dialog.ShowDialog(this) == true && dialog.FileNames.Length > 0)
+        {
+            _ = _vm.SendFilesAsync(dialog.FileNames, null);
+        }
     }
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)

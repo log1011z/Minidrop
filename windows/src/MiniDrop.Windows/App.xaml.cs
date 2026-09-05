@@ -85,10 +85,12 @@ public partial class App : Application
         _singleInstance.StartServer((files, text) =>
             Dispatcher.BeginInvoke(() => _ = _mainVm?.SendFilesAsync(files, text)));
 
-        // 托盘
+        // 托盘（图标来自内嵌 app.ico；左键打开、右键菜单 打开/刷新/设置/退出）
         _tray = new TaskbarIcon
         {
-            ToolTipText = "MiniDrop",
+            ToolTipText = "MiniDrop — 点击打开，右键更多",
+            IconSource = new System.Windows.Media.Imaging.BitmapImage(
+                new Uri("pack://application:,,,/app.ico")),
             Visibility = Visibility.Visible,
         };
         _tray.LeftClickCommand = new RelayCommand(ShowMainWindow);
@@ -172,6 +174,7 @@ public partial class App : Application
     {
         _appCts.Cancel();
         _tray?.Dispose();
+        _singleInstance?.Dispose();
         _db?.Dispose();
         Shutdown();
     }
