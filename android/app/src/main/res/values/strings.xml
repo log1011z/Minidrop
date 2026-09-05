@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MiniDrop</string>
+    <string name="settings">设置</string>
+    <string name="refresh">刷新</string>
+    <string name="load_older">加载更早</string>
+    <string name="send">发送</string>
+    <string name="delete">删除</string>
+    <string name="download">下载</string>
+    <string name="open">打开</string>
+    <string name="retry">重试</string>
+    <string name="copy">复制</string>
+    <string name="input_hint">输入文字…</string>
+    <string name="already_latest">已是最新</string>
+    <string name="no_more_history">没有更早记录</string>
+    <string name="not_configured">请先完成 WebDAV 设置</string>
+    <string name="delete_confirm">删除这条消息？\n\n将从所有设备删除（不可恢复）。</string>
+    <string name="joined_minidrop">已加入 MiniDrop</string>
+</resources>
