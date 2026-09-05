@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>MiniDrop.Windows</RootNamespace>
+    <ApplicationIcon />
+    <AssemblyTitle>MiniDrop</AssemblyTitle>
+    <Product>MiniDrop</Product>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="H.NotifyIcon.Wpf" Version="2.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MiniDrop.Application\MiniDrop.Application.csproj" />
+  </ItemGroup>
+
+</Project>

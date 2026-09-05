@@ -28,7 +28,7 @@ public sealed class Database : IDisposable
         Migrate();
     }
 
-    internal SqliteConnection Connection => _connection;
+    public SqliteConnection Connection => _connection;
 
     /// <summary>写事务（同步版）：在写锁内执行，异常回滚。</summary>
     public T Write<T>(Func<SqliteTransaction, T> action)

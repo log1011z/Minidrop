@@ -1,0 +1,125 @@
+<Window x:Class="MiniDrop.Windows.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:MiniDrop.Windows.ViewModels"
+        Title="MiniDrop" Width="520" Height="680"
+        MinWidth="380" MinHeight="420"
+        WindowStartupLocation="CenterScreen"
+        AllowDrop="True"
+        PreviewKeyDown="Window_PreviewKeyDown"
+        Closing="Window_Closing"
+        Drop="Window_Drop"
+        Background="#FAFAFA">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+        <DataTemplate DataType="{x:Type vm:FileItemViewModel}">
+            <Border Margin="0,2" Padding="6,4" Background="#EEF2FF" CornerRadius="6">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding SizeText, StringFormat=' · {0}'}" Foreground="#666" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding StateText}" Foreground="#2563EB" Margin="6,0,0,0" VerticalAlignment="Center" />
+                    <Button Content="{Binding ActionText}" Command="{Binding ActionCommand}"
+                            Margin="8,0,0,0" Padding="6,1" VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type vm:MessageViewModel}">
+            <Border Margin="8,4" Padding="10,6" Background="White" CornerRadius="8"
+                    BorderBrush="#E5E7EB" BorderThickness="1">
+                <Border.ContextMenu>
+                    <ContextMenu>
+                        <MenuItem Header="删除"
+                                  Command="{Binding DataContext.DeleteMessageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                  CommandParameter="{Binding Id}" />
+                    </ContextMenu>
+                </Border.ContextMenu>
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding TimeText}" Foreground="#888" />
+                        <TextBlock Text="{Binding DeviceName, StringFormat=' {0}'}" Foreground="#888" />
+                        <TextBlock Text="{Binding StatusText}" Foreground="#2563EB" Margin="8,0,0,0" />
+                        <Button Content="重试" Command="{Binding DataContext.RetryMessageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding Id}" Padding="4,0" Margin="8,0,0,0"
+                                Visibility="{Binding ShowRetry, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding ErrorText}" Foreground="#DC2626" Margin="0,2,0,0"
+                               TextWrapping="Wrap" Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />
+
+                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" Margin="0,4,0,0"
+                               Visibility="{Binding HasText, Converter={StaticResource BoolToVis}}">
+                        <TextBlock.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="复制"
+                                          Command="{Binding DataContext.CopyTextCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                          CommandParameter="{Binding Text}" />
+                                <MenuItem Header="删除"
+                                          Command="{Binding DataContext.DeleteMessageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                          CommandParameter="{Binding Id}" />
+                            </ContextMenu>
+                        </TextBlock.ContextMenu>
+                    </TextBlock>
+
+                    <ItemsControl ItemsSource="{Binding Files}" Margin="0,4,0,0" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 顶栏 -->
+        <Border Grid.Row="0" Background="White" Padding="12,8" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1">
+            <DockPanel>
+                <TextBlock Text="MiniDrop" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="⟳ 刷新 (F5)" Command="{Binding RefreshAsyncCommand}" />
+                    <Button Content="⚙ 设置" Click="SettingsButton_Click" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- 提示与加载更早 -->
+        <StackPanel Grid.Row="1" Margin="12,8,12,0">
+            <Border Background="#FEF3C7" Padding="8,4" CornerRadius="6"
+                    Visibility="{Binding ShowUnconfigured, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="请先完成 WebDAV 设置（右上角 ⚙）" Foreground="#92400E" />
+            </Border>
+            <Button Content="加载更早" Command="{Binding LoadOlderAsyncCommand}" HorizontalAlignment="Center"
+                    Margin="0,6,0,0" Visibility="{Binding ShowLoadOlder, Converter={StaticResource BoolToVis}}" />
+        </StackPanel>
+
+        <!-- 时间线 -->
+        <ListBox Grid.Row="2" x:Name="TimelineList" ItemsSource="{Binding Timeline}"
+                 BorderThickness="0" Background="Transparent"
+                 HorizontalContentAlignment="Stretch"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 VirtualizingPanel.IsVirtualizing="True"
+                 VirtualizingPanel.VirtualizationMode="Recycling" />
+
+        <!-- 输入栏 -->
+        <Border Grid.Row="3" Background="White" Padding="12,8" BorderBrush="#E5E7EB" BorderThickness="0,1,0,0">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="发送 ↑" Command="{Binding SendCommand}" FontWeight="SemiBold" />
+                <TextBox x:Name="InputBox" Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
+                         AcceptsReturn="True" TextWrapping="Wrap" MinHeight="44" MaxHeight="140"
+                         VerticalScrollBarVisibility="Auto"
+                         KeyDown="InputBox_KeyDown" PreviewKeyDown="InputBox_PreviewKeyDown" />
+            </DockPanel>
+        </Border>
+
+        <!-- 状态栏 -->
+        <Border Grid.Row="4" Background="#F3F4F6" Padding="12,4">
+            <TextBlock Text="{Binding StatusText}" Foreground="#666" TextTrimming="CharacterEllipsis" />
+        </Border>
+    </Grid>
+</Window>
