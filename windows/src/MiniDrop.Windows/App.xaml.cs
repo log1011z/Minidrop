@@ -29,6 +29,25 @@ public partial class App : Application
     {
         Settings = AppSettings.Load();
         Log = new FileDiagLog(FileDiagLog.DefaultDir());
+
+        // 全局异常兜底：托盘常驻应用不应因单次异常闪退；全部落诊断日志
+        DispatcherUnhandledException += (_, args) =>
+        {
+            var ex = args.Exception;
+            Log.Error("ui", $"{ex.GetType().Name}: {ex.Message} @ {ex.StackTrace?.Split('\n')[^1].Trim()}");
+            args.Handled = true;
+        };
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            Log.Error("task", $"{args.Exception.GetType().Name}: {args.Exception.InnerException?.Message ?? args.Exception.Message}");
+            args.SetObserved();
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            var ex = args.ExceptionObject as Exception;
+            Log.Error("fatal", $"{ex?.GetType().Name}: {ex?.Message}");
+        };
+
         var dataDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         _db = new Database(System.IO.Path.Combine(dataDir, "MiniDrop", "minidrop.db"));
         Db = _db;

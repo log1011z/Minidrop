@@ -348,6 +348,16 @@ public sealed class JobDao(Database db)
         cmd.ExecuteNonQuery();
     }
 
+    /// <summary>最早的未到期 retry_wait 时间（毫秒时间戳）；无则返回 null。供泵定时醒来消费（§4.3）。</summary>
+    public long? NextRetryWaitAt(long nowMs)
+    {
+        using var cmd = db.Connection.Cmd(null,
+            "SELECT MIN(next_attempt_at) FROM upload_jobs WHERE state = 'retry_wait' AND next_attempt_at > $now");
+        cmd.Set("$now", nowMs);
+        var v = cmd.ExecuteScalar();
+        return v is long l ? l : null;
+    }
+
     /// <summary>用户点重试：指定 job 转 queued。</summary>
     public bool Requeue(string messageId)
     {

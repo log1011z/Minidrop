@@ -23,12 +23,18 @@ public sealed class UploadPump(
     private readonly FileDao _files = new(db);
     private readonly JobDao _jobs = new(db);
 
-    public void Wake() { _signal.Release(); WakeRequested?.Invoke(); }
+    public void Wake()
+    {
+        // 信号已挂起时无需再唤醒（合并语义）；满计数时 Release 会抛异常，必须吞掉
+        try { _signal.Release(); }
+        catch (SemaphoreFullException) { }
+        WakeRequested?.Invoke();
+    }
 
     /// <summary>UI/宿主可挂接该事件做进度刷新等副作用。</summary>
     public event Action? WakeRequested;
 
-    /// <summary>启动宿主后台循环：唯一消费者，Wake 唤醒，退出前先清空队列。</summary>
+    /// <summary>启动宿主后台循环：唯一消费者。等待 Wake 信号或最近 retry_wait 到期，二者任一触发即消费队列。</summary>
     public void StartBackgroundLoop(CancellationToken ct)
     {
         _ = Task.Run(async () =>
@@ -38,14 +44,34 @@ public sealed class UploadPump(
                 await DrainAsync(ct).ConfigureAwait(false);
                 while (!ct.IsCancellationRequested)
                 {
-                    await _signal.WaitAsync(ct).ConfigureAwait(false);
-                    await DrainAsync(ct).ConfigureAwait(false);
+                    // 等待：Wake 信号，或最早 retry_wait 任务到期（§4.3 到期自动重排）
+                    var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    var due = _jobs.NextRetryWaitAt(now);
+                    var wait = due is { } d
+                        ? TimeSpan.FromMilliseconds(Math.Max(0, d - now))
+                        : Timeout.InfiniteTimeSpan;
+                    try
+                    {
+                        await _signal.WaitAsync(wait, ct).ConfigureAwait(false);
+                    }
+                    catch (SemaphoreFullException) { }
+
+                    try
+                    {
+                        await DrainAsync(ct).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception e)
+                    {
+                        // 单轮失败不终结循环：下一轮继续消费
+                        log.Error("pump", $"drain failed: {e.GetType().Name}");
+                    }
                 }
             }
             catch (OperationCanceledException) { }
-            catch (Exception)
+            catch (Exception e)
             {
-                log.Error("pump", "background loop crashed");
+                log.Error("pump", $"background loop crashed: {e.GetType().Name}");
             }
         }, ct);
     }
@@ -126,8 +152,8 @@ public sealed class UploadPump(
         var mk = await client.EnsureDirectoryAsync(RemotePaths.ItemsMonthDir(msg.RemoteMonth)).ConfigureAwait(false);
         if (!mk.Ok)
         {
-            if (ClassifyTransient(mk, out var code0, out var after0))
-                ToRetryWait(job, code0!, after0);
+            if (ClassifyTransient(mk, out var code0, out var after0, out var detail0))
+                ToRetryWait(job, code0!, after0, detail0);
             else
                 FailJob(job, code0!, "月份目录创建失败", null);
             return;
@@ -170,9 +196,9 @@ public sealed class UploadPump(
             else
             {
                 _files.SetState(file.FileId, FileStates.Pending);
-                if (ClassifyTransient(put, out var code, out var retryAfter))
+                if (ClassifyTransient(put, out var code, out var retryAfter, out var putDetail))
                 {
-                    ToRetryWait(job, code!, retryAfter);
+                    ToRetryWait(job, code!, retryAfter, putDetail);
                     return;
                 }
                 FailJob(job, code!, Describe(put), null);
@@ -214,9 +240,9 @@ public sealed class UploadPump(
             return;
         }
 
-        if (ClassifyTransient(putJson, out var code2, out var retryAfter2))
+        if (ClassifyTransient(putJson, out var code2, out var retryAfter2, out var jsonDetail))
         {
-            ToRetryWait(job, code2!, retryAfter2);
+            ToRetryWait(job, code2!, retryAfter2, jsonDetail);
             return;
         }
         FailJob(job, code2!, Describe(putJson), null);
@@ -224,10 +250,11 @@ public sealed class UploadPump(
 
     // ---------- 状态转换 ----------
 
-    private static bool ClassifyTransient(DavResult result, out string? errorCode, out TimeSpan? retryAfter)
+    private static bool ClassifyTransient(DavResult result, out string? errorCode, out TimeSpan? retryAfter, out string? detail)
     {
         errorCode = null;
         retryAfter = null;
+        detail = result.Detail;
         switch (result.Status)
         {
             case DavStatus.NetworkError:
@@ -253,7 +280,7 @@ public sealed class UploadPump(
         }
     }
 
-    private void ToRetryWait(JobRow job, string code, TimeSpan? retryAfter)
+    private void ToRetryWait(JobRow job, string code, TimeSpan? retryAfter, string? detail = null)
     {
         var attempts = job.Attempts + 1;
         if (attempts >= ErrorCodes.MaxTransientAttempts)
@@ -264,8 +291,8 @@ public sealed class UploadPump(
         var local = ErrorCodes.Backoff[Math.Min(attempts - 1, ErrorCodes.Backoff.Length - 1)];
         var delay = retryAfter is { } ra && ra > local ? ra : local;
         var next = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + (long)delay.TotalMilliseconds;
-        _jobs.SetState(job.MessageId, JobState.RetryWait, attempts, next, errorCode: code);
-        log.Warn("pump", $"retry_wait code={code} attempts={attempts}");
+        _jobs.SetState(job.MessageId, JobState.RetryWait, attempts, next, errorCode: code, errorMessage: detail);
+        log.Warn("pump", $"retry_wait code={code} attempts={attempts} detail={detail}");
     }
 
     private void FailJob(JobRow job, string code, string detail, TimeSpan? _)

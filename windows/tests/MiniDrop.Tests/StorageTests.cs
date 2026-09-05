@@ -95,6 +95,18 @@ public class StorageTests : IDisposable
     }
 
     [Fact]
+    public void NextRetryWaitAt_ReturnsEarliestPendingDueTime()
+    {
+        var a = "01KYX9XP00ABCDEFGHJKMNPQRS";
+        _h.Messages.Insert(null, Row(a, "2026-08-01T00:00:00.000Z"));
+        _h.Jobs.Insert(null, new JobRow(a, JobState.RetryWait, 1, 5000, 0, 0, ErrorCodes.Network, null, JobDao.Now(), JobDao.Now()));
+
+        Assert.Equal(5000, _h.Jobs.NextRetryWaitAt(0));
+        Assert.Null(_h.Jobs.NextRetryWaitAt(5000)); // 到期后不再返回（claim 直接可取）
+        Assert.Null(_h.Jobs.NextRetryWaitAt(9999));
+    }
+
+    [Fact]
     public void RequeueAuth_OnlyTouchesAuthFailures()
     {
         var a = "01KYX9XP00ABCDEFGHJKMNPQRS";
