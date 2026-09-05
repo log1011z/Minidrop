@@ -99,14 +99,11 @@ class WebDavClient(
         .writeTimeout(timeoutSeconds, TimeUnit.SECONDS)
         // WebDAV 只连坚果云（国内直连必通），绕过系统代理，避免 VPN 接管导致连接失败
         .proxy(java.net.Proxy.NO_PROXY)
-        .authenticator(object : Authenticator {
-            override fun authenticate(route: Route?, response: Response): Request? {
-                if (response.request.header("Authorization") != null) return null
-                return response.request.newBuilder()
-                    .header("Authorization", Credentials.basic(account, passwordProvider() ?: ""))
-                    .build()
-            }
-        })
+        // 预授权：每个请求直接携带 Basic 凭据，避免 401 挑战重放
+        .addInterceptor { chain ->
+            val credential = okhttp3.Credentials.basic(account, passwordProvider() ?: "")
+            chain.proceed(chain.request().newBuilder().header("Authorization", credential).build())
+        }
         .build()
 
     fun absoluteUri(relativePath: String): String {

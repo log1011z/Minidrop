@@ -39,13 +39,23 @@ public sealed class WebDavClient : IDisposable
         var handler = new HttpClientHandler
         {
             AllowAutoRedirect = true,
-            Credentials = new NetworkCredential(options.Account, options.PasswordProvider() ?? ""),
-            PreAuthenticate = true,
             // WebDAV 只连坚果云（国内直连必通），绕过系统代理，避免 VPN/代理接管导致连接失败
             UseProxy = false,
         };
         _http = new HttpClient(handler) { Timeout = options.Timeout };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd(options.UserAgent);
+    }
+
+    /// <summary>
+    /// 预授权：每个请求直接携带 Basic 凭据。
+    /// 若依赖 HttpClient 的 401 挑战重放，PUT 的不可回读内容流会在重放时抛
+    /// "The stream was already consumed"（§5.3 边读边算哈希）。
+    /// </summary>
+    private void AddAuth(HttpRequestMessage req)
+    {
+        var password = _options.PasswordProvider() ?? "";
+        var token = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_options.Account}:{password}"));
+        req.Headers.Authorization = new AuthenticationHeaderValue("Basic", token);
     }
 
     public static string NormalizeRootUrl(string url)
@@ -70,6 +80,7 @@ public sealed class WebDavClient : IDisposable
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Parse("MKCOL"), AbsoluteUri(relativePath));
+            AddAuth(req);
             using var resp = await _http.SendAsync(req).ConfigureAwait(false);
             return Classify(resp, expectBody: false);
         }
@@ -105,6 +116,7 @@ public sealed class WebDavClient : IDisposable
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Put, AbsoluteUri(relativePath));
+            AddAuth(req);
             var httpContent = new StreamContent(content, 64 * 1024);
             httpContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
             httpContent.Headers.ContentLength = length;
@@ -127,7 +139,9 @@ public sealed class WebDavClient : IDisposable
     {
         try
         {
-            using var resp = await _http.GetAsync(AbsoluteUri(relativePath), HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+            using var req = new HttpRequestMessage(HttpMethod.Get, AbsoluteUri(relativePath));
+            AddAuth(req);
+            using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
             var classified = Classify(resp, expectBody: true);
             if (!classified.Ok)
                 return (classified, null);
@@ -160,7 +174,9 @@ public sealed class WebDavClient : IDisposable
     {
         try
         {
-            using var resp = await _http.GetAsync(AbsoluteUri(relativePath), HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            using var req = new HttpRequestMessage(HttpMethod.Get, AbsoluteUri(relativePath));
+            AddAuth(req);
+            using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             var classified = Classify(resp, expectBody: true);
             if (!classified.Ok)
                 return classified;
@@ -188,7 +204,9 @@ public sealed class WebDavClient : IDisposable
     {
         try
         {
-            using var resp = await _http.DeleteAsync(AbsoluteUri(relativePath)).ConfigureAwait(false);
+            using var req = new HttpRequestMessage(HttpMethod.Delete, AbsoluteUri(relativePath));
+            AddAuth(req);
+            using var resp = await _http.SendAsync(req).ConfigureAwait(false);
             var result = Classify(resp, expectBody: false);
             return result.Status == DavStatus.NotFound ? DavResult.NewOk((int)resp.StatusCode) : result;
         }
@@ -229,6 +247,7 @@ public sealed class WebDavClient : IDisposable
                 Uri uri = first ? AbsoluteUri(relativeDir + "/") : new Uri(nextUrl!, UriKind.Absolute);
                 using var req = new HttpRequestMessage(new HttpMethod("PROPFIND"), uri);
                 req.Headers.TryAddWithoutValidation("Depth", "1");
+                AddAuth(req);
                 req.Content = new StringContent(PropfindBody, Encoding.UTF8, "application/xml");
                 using var resp = await _http.SendAsync(req).ConfigureAwait(false);
                 var classified = Classify(resp, expectBody: true);
