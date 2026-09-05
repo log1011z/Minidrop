@@ -13,6 +13,7 @@ import com.minidrop.app.sync.SyncCoordinator
 import com.minidrop.app.sync.UploadPump
 import com.minidrop.app.sync.UploadPumpWorker
 import com.minidrop.app.webdav.WebDavClient
+import kotlinx.coroutines.launch
 
 /** 组合根：全局唯一数据库 / WebDAV 工厂 / 各服务。 */
 class MiniDropApp : Application() {

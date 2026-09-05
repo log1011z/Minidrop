@@ -1,5 +1,6 @@
 package com.minidrop.app.sync
 
+import com.minidrop.app.MiniDropApp
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -33,7 +34,7 @@ class UploadPumpWorker(context: Context, params: WorkerParameters) : CoroutineWo
         val processed = app.pump.drain()
 
         // 是否存在未到期 retry_wait：有 → 按最早到期自我重排
-        val next = app.db.jobDao().nextRetryWaitAt()
+        val next = app.db.jobDao().nextRetryWaitAt(System.currentTimeMillis())
         if (next != null && next > System.currentTimeMillis()) {
             val delayMs = (next - System.currentTimeMillis()).coerceIn(1000L, TimeUnit.HOURS.toMillis(1))
             enqueueDelayed(applicationContext, delayMs)
@@ -89,6 +90,4 @@ class UploadPumpWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 .enqueueUniqueWork(UNIQUE_NAME, ExistingWorkPolicy.REPLACE, request)
         }
     }
-}
-
 }

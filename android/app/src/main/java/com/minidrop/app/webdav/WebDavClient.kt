@@ -208,7 +208,7 @@ class WebDavClient(
 
     /** 读取已知对象，上限 maxBytes：超出停止并标记 TOO_LARGE。 */
     suspend fun getBytes(relativePath: String, maxBytes: Long = 2L * 1024 * 1024): Pair<DavResult, ByteArray?> =
-        gate.run("GetMeta", false) {
+        gate.run<Pair<DavResult, ByteArray?>>("GetMeta", false) {
             try {
                 val req = Request.Builder().url(absoluteUri(relativePath)).get().build()
                 http.newCall(req).execute().use { resp ->
@@ -237,7 +237,7 @@ class WebDavClient(
 
     /** 流式下载到目标流（.part），带 SHA-256 计算与进度。 */
     suspend fun getToFile(relativePath: String, target: java.io.File, onProgress: (Long) -> Unit): Pair<DavResult, String?> =
-        gate.run("GetFile", false) {
+        gate.run<Pair<DavResult, String?>>("GetFile", false) {
             var sha: String? = null
             val result = try {
                 val req = Request.Builder().url(absoluteUri(relativePath)).get().build()
@@ -260,7 +260,7 @@ class WebDavClient(
                         }
                     }
                     sha = digest.digest().joinToString("") { "%02x".format(it) }
-                    classified to null
+                    classified
                 }
             } catch (e: Exception) {
                 fromException(e)

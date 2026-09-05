@@ -79,7 +79,7 @@ object Ulid {
                 sb.append(ALPHABET[((buffer shr bits) and 0x1F).toInt()])
             }
         }
-        return sb.toString(0, 16)
+        return sb.substring(0, 16)
     }
 
     private fun incrementRandom() {

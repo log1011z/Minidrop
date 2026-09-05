@@ -1,5 +1,6 @@
 package com.minidrop.app.sync
 
+import androidx.room.withTransaction
 import com.minidrop.app.core.ErrorCodes
 import com.minidrop.app.core.Limits
 import com.minidrop.app.core.MessageJson
@@ -49,8 +50,8 @@ class SyncException(val errorCode: String) : Exception("sync failed: $errorCode"
 class SyncCoordinator(
     private val db: MiniDropDatabase,
     private val dav: () -> WebDavClient,
-    private val maxFileBytes: () -> Long,
     val mutex: Mutex = Mutex(),
+    private val maxFileBytes: () -> Long,
 ) {
     companion object {
         const val WINDOW_SIZE = 20
@@ -319,7 +320,7 @@ class SyncCoordinator(
 
     /** 接收入库：messages + files 单事务。 */
     suspend fun insertIncoming(m: com.minidrop.app.core.RemoteMessage) {
-        androidx.room.withTransaction(db) {
+        db.withTransaction {
             messageDao.upsert(
                 MessageEntity(
                     id = m.id,

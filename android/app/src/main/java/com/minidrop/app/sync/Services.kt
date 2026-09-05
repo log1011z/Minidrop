@@ -1,6 +1,7 @@
 package com.minidrop.app.sync
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.minidrop.app.core.ErrorCodes
 import com.minidrop.app.core.FileStates
 import com.minidrop.app.core.JobStates
@@ -21,6 +22,7 @@ import com.minidrop.app.webdav.DavStatus
 import com.minidrop.app.webdav.ErrorClassifier
 import com.minidrop.app.webdav.WebDavClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -68,7 +70,7 @@ class SendService(
         val devId = deviceId()
         val devName = deviceName()
 
-        androidx.room.withTransaction(db) {
+        db.withTransaction {
             db.messageDao().upsert(
                 MessageEntity(
                     id = id, remoteMonth = month, deviceId = devId, deviceName = devName,

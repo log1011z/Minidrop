@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import java.io.ByteArrayOutputStream
@@ -96,24 +97,27 @@ object MessageJson {
                     val obj = f as? JsonObject
                         ?: return MessageParseResult(false, null, RejectReasons.BAD_JSON)
 
-                    val fid = (obj["id"] as? JsonPrimitive)?.contentOrNull
-                    if (!isUuidV4(fid)) {
+                    val fidEl = (obj["id"] as? JsonPrimitive)?.contentOrNull
+                    if (fidEl == null || !isUuidV4(fidEl)) {
                         return MessageParseResult(false, null, RejectReasons.BAD_FILE_ID)
                     }
-                    if (!seen.add(fid!!)) {
+                    val fid = fidEl
+                    if (!seen.add(fid)) {
                         return MessageParseResult(false, null, RejectReasons.DUP_FILE_ID)
                     }
 
-                    val name = (obj["name"] as? JsonPrimitive)?.contentOrNull
-                    if (name.isNullOrEmpty() || !isValidFileName(name)) {
+                    val nameEl = (obj["name"] as? JsonPrimitive)?.contentOrNull
+                    if (nameEl == null || !isValidFileName(nameEl)) {
                         return MessageParseResult(false, null, RejectReasons.BAD_FILE_NAME)
                     }
+                    val name = nameEl
 
                     val sizeEl = obj["size"] as? JsonPrimitive
-                    val size = if (sizeEl != null && !sizeEl.isString) sizeEl.longOrNull else null
-                    if (size == null) {
+                    if (sizeEl == null || sizeEl.isString) {
                         return MessageParseResult(false, null, RejectReasons.BAD_JSON)
                     }
+                    val size = sizeEl.longOrNull
+                        ?: return MessageParseResult(false, null, RejectReasons.BAD_JSON)
                     if (size < 0 || size > maxFileBytes) {
                         return MessageParseResult(false, null, RejectReasons.BAD_FILE_SIZE)
                     }
@@ -222,18 +226,20 @@ object MessageJson {
     }
 
     /** 墓碑正文只用于诊断；解析失败返回 null，不影响删除语义。 */
-    fun parseTombstone(payload: ByteArray): Tombstone? = try {
-        val root = json.parseToJsonElement(payload.decodeToString()).jsonObject
-        val version = (root["version"] as? JsonPrimitive)?.longOrNull ?: return null
-        if (version != 1L) return null
-        val id = (root["id"] as? JsonPrimitive)?.contentOrNull ?: return null
-        if (!Ulid.isValid(id)) return null
-        val at = (root["deleted_at"] as? JsonPrimitive)?.contentOrNull ?: return null
-        val by = (root["deleted_by"] as? JsonPrimitive)?.contentOrNull ?: return null
-        if (!isUuidV4(by)) return null
-        Tombstone(id, at, by)
-    } catch (_: Exception) {
-        null
+    fun parseTombstone(payload: ByteArray): Tombstone? {
+        return try {
+            val root = json.parseToJsonElement(payload.decodeToString()).jsonObject
+            val version = (root["version"] as? JsonPrimitive)?.longOrNull ?: return null
+            if (version != 1L) return null
+            val id = (root["id"] as? JsonPrimitive)?.contentOrNull ?: return null
+            if (!Ulid.isValid(id)) return null
+            val at = (root["deleted_at"] as? JsonPrimitive)?.contentOrNull ?: return null
+            val by = (root["deleted_by"] as? JsonPrimitive)?.contentOrNull ?: return null
+            if (!isUuidV4(by)) return null
+            Tombstone(id, at, by)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     // ---------- 校验工具 ----------

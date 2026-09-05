@@ -1,5 +1,6 @@
 package com.minidrop.app.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -28,13 +29,13 @@ data class MetaEntity(@PrimaryKey val key: String, val value: String)
 )
 data class MessageEntity(
     @PrimaryKey val id: String,
-    val remoteMonth: String,
-    val deviceId: String,
-    val deviceName: String,
-    val createdAt: String,
+    @ColumnInfo(name = "remote_month") val remoteMonth: String,
+    @ColumnInfo(name = "device_id") val deviceId: String,
+    @ColumnInfo(name = "device_name") val deviceName: String,
+    @ColumnInfo(name = "created_at") val createdAt: String,
     val text: String?,
     val direction: String,
-    val receivedAt: String,
+    @ColumnInfo(name = "received_at") val receivedAt: String,
 )
 
 @Entity(
@@ -50,17 +51,17 @@ data class MessageEntity(
     ],
 )
 data class FileEntity(
-    @PrimaryKey val fileId: String,
-    val messageId: String,
+    @PrimaryKey @ColumnInfo(name = "file_id") val fileId: String,
+    @ColumnInfo(name = "message_id") val messageId: String,
     val idx: Int,
     val name: String,
     val size: Long,
     val mime: String?,
-    val sha256: String?,
+    @ColumnInfo(name = "sha256") val sha256: String?,
     val direction: String,
-    val sourcePath: String?,
-    val sourceModifiedAt: Long?,
-    val cachePath: String?,
+    @ColumnInfo(name = "source_path") val sourcePath: String?,
+    @ColumnInfo(name = "source_modified_at") val sourceModifiedAt: Long?,
+    @ColumnInfo(name = "cache_path") val cachePath: String?,
     val state: String,
 )
 
@@ -75,35 +76,35 @@ data class FileEntity(
     ],
 )
 data class UploadJobEntity(
-    @PrimaryKey val messageId: String,
+    @PrimaryKey @ColumnInfo(name = "message_id") val messageId: String,
     val state: String,
     val attempts: Int,
-    val nextAttemptAt: Long?,
-    val bytesDone: Long,
-    val bytesTotal: Long,
-    val errorCode: String?,
-    val errorMessage: String?,
-    val enqueuedAt: String,
-    val updatedAt: String,
+    @ColumnInfo(name = "next_attempt_at") val nextAttemptAt: Long?,
+    @ColumnInfo(name = "bytes_done") val bytesDone: Long,
+    @ColumnInfo(name = "bytes_total") val bytesTotal: Long,
+    @ColumnInfo(name = "error_code") val errorCode: String?,
+    @ColumnInfo(name = "error_message") val errorMessage: String?,
+    @ColumnInfo(name = "enqueued_at") val enqueuedAt: String,
+    @ColumnInfo(name = "updated_at") val updatedAt: String,
 )
 
 @Entity(tableName = "rejected_items")
 data class RejectedItemEntity(
-    @PrimaryKey val remotePath: String,
-    val messageId: String,
-    val remoteSignature: String,
-    val reasonCode: String,
-    val failCount: Int,
+    @PrimaryKey @ColumnInfo(name = "remote_path") val remotePath: String,
+    @ColumnInfo(name = "message_id") val messageId: String,
+    @ColumnInfo(name = "remote_signature") val remoteSignature: String,
+    @ColumnInfo(name = "reason_code") val reasonCode: String,
+    @ColumnInfo(name = "fail_count") val failCount: Int,
     val quarantined: Int,
-    val lastFailedAt: String,
+    @ColumnInfo(name = "last_failed_at") val lastFailedAt: String,
 )
 
 @Entity(tableName = "sync_months")
 data class SyncMonthEntity(
     @PrimaryKey val month: String,
-    val lastScannedAt: String?,
-    val lastItemSignature: String?,
-    val lastTombstoneSignature: String?,
+    @ColumnInfo(name = "last_scanned_at") val lastScannedAt: String?,
+    @ColumnInfo(name = "last_item_signature") val lastItemSignature: String?,
+    @ColumnInfo(name = "last_tombstone_signature") val lastTombstoneSignature: String?,
 )
 
 data class TimelineRow(
