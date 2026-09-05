@@ -120,22 +120,21 @@ class WebDavClient(
         return root + encoded + trailing
     }
 
-    private suspend fun classify(response: Response): DavResult {
-        response.use {
-            val code = it.code
-            return when {
-                code in intArrayOf(200, 201, 204, 207) -> DavResult(DavStatus.SUCCESS, code)
-                code == 404 -> DavResult(DavStatus.NOT_FOUND, code)
-                code == 405 -> DavResult(DavStatus.ALREADY_EXISTS_OR_CREATED, code)
-                code == 401 || code == 403 -> DavResult(DavStatus.AUTH_ERROR, code)
-                code == 507 -> DavResult(DavStatus.QUOTA_ERROR, code)
-                code == 429 || code == 503 -> DavResult(
-                    DavStatus.RATE_LIMITED, code,
-                    it.header("Retry-After")?.let { h -> h.toLongOrNull()?.let { s -> s * 1000 } },
-                )
-                code >= 500 -> DavResult(DavStatus.SERVER_ERROR, code)
-                else -> DavResult(DavStatus.CLIENT_ERROR, code)
-            }
+    /** 只读响应头做分类；不关闭响应（由调用方的 use 管理），调用方随后仍可读 body。 */
+    private fun classify(response: Response): DavResult {
+        val code = response.code
+        return when {
+            code in intArrayOf(200, 201, 204, 207) -> DavResult(DavStatus.SUCCESS, code)
+            code == 404 -> DavResult(DavStatus.NOT_FOUND, code)
+            code == 405 -> DavResult(DavStatus.ALREADY_EXISTS_OR_CREATED, code)
+            code == 401 || code == 403 -> DavResult(DavStatus.AUTH_ERROR, code)
+            code == 507 -> DavResult(DavStatus.QUOTA_ERROR, code)
+            code == 429 || code == 503 -> DavResult(
+                DavStatus.RATE_LIMITED, code,
+                response.header("Retry-After")?.let { h -> h.toLongOrNull()?.let { s -> s * 1000 } },
+            )
+            code >= 500 -> DavResult(DavStatus.SERVER_ERROR, code)
+            else -> DavResult(DavStatus.CLIENT_ERROR, code)
         }
     }
 
@@ -153,7 +152,7 @@ class WebDavClient(
     suspend fun mkCol(relativePath: String): DavResult = gate.run("Mkcol", false) {
         try {
             val req = Request.Builder().url(absoluteUri(relativePath)).method("MKCOL", null).build()
-            classify(http.newCall(req).execute())
+            http.newCall(req).execute().use { resp -> classify(resp) }
         } catch (e: Exception) {
             fromException(e)
         }
@@ -178,7 +177,7 @@ class WebDavClient(
         try {
             val body = content.toRequestBody("application/octet-stream".toMediaType(), 0, content.size)
             val req = Request.Builder().url(absoluteUri(relativePath)).put(body).build()
-            classify(http.newCall(req).execute())
+            http.newCall(req).execute().use { resp -> classify(resp) }
         } catch (e: Exception) {
             fromException(e)
         }
@@ -210,7 +209,7 @@ class WebDavClient(
                     }
                 }
                 val req = Request.Builder().url(absoluteUri(relativePath)).put(body).build()
-                classify(http.newCall(req).execute())
+                http.newCall(req).execute().use { resp -> classify(resp) }
             } catch (e: Exception) {
                 fromException(e)
             }
@@ -282,7 +281,7 @@ class WebDavClient(
     suspend fun delete(relativePath: String): DavResult = gate.run("Delete", false) {
         try {
             val req = Request.Builder().url(absoluteUri(relativePath)).delete().build()
-            val result = classify(http.newCall(req).execute())
+            val result = http.newCall(req).execute().use { resp -> classify(resp) }
             // DELETE 404 视为成功（幂等收敛）
             if (result.status == DavStatus.NOT_FOUND) DavResult(DavStatus.SUCCESS, result.httpCode) else result
         } catch (e: Exception) {
