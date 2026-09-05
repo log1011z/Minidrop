@@ -47,3 +47,7 @@ Thumbs.db
 Desktop.ini
 *.log
 .dotnet/
+
+# 发布产物
+windows/publish/
+windows/dist/
