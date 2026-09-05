@@ -224,8 +224,10 @@ public partial class SettingsViewModel : ObservableObject
 
         CredentialManager.Save(password);
 
-        if (passwordChanged)
-            new JobDao(Services.Db).RequeueAuthFailed(); // 只重排 AUTH failed job（§11.3）
+        // 测试连接刚证明凭据可用：重排 AUTH failed job 并立即唤醒上传泵。
+        // （此前账号/密码错误导致 AUTH 失败的任务，保存后无需逐条手点重试）
+        new JobDao(Services.Db).RequeueAuthFailed();
+        Services.Pump.Wake();
 
         Directory.CreateDirectory(s.DownloadDir);
         return (true, null);

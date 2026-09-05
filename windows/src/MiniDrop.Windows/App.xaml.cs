@@ -33,14 +33,19 @@ public partial class App : Application
         _db = new Database(System.IO.Path.Combine(dataDir, "MiniDrop", "minidrop.db"));
         Db = _db;
 
-        OptionsFactory = () => new AppOptions
+        OptionsFactory = () =>
         {
-            DeviceId = Settings.DeviceId,
-            DeviceName = Settings.DeviceName,
-            DownloadDir = Settings.DownloadDir,
-            MaxFileBytes = Settings.MaxFileBytes,
-            NotifyOnSendSuccess = Settings.NotifyOnSendSuccess,
-            NotifyOnSendFailure = Settings.NotifyOnSendFailure,
+            // 每次读取最新配置：设置窗口保存后立即生效（避免内存快照过期）
+            var s = AppSettings.Load();
+            return new AppOptions
+            {
+                DeviceId = s.DeviceId,
+                DeviceName = s.DeviceName,
+                DownloadDir = s.DownloadDir,
+                MaxFileBytes = s.MaxFileBytes,
+                NotifyOnSendSuccess = s.NotifyOnSendSuccess,
+                NotifyOnSendFailure = s.NotifyOnSendFailure,
+            };
         };
 
         // 单实例：第二实例把文件转发给首实例后退出
@@ -64,8 +69,9 @@ public partial class App : Application
 
         WebDavClient DavFactory() => new(new WebDavOptions
         {
-            RootUrl = WebDavClient.NormalizeRootUrl(Settings.RootUrl),
-            Account = Settings.Account,
+            // 每次读取最新配置：账号/根 URL 在设置保存后立即生效
+            RootUrl = WebDavClient.NormalizeRootUrl(AppSettings.Load().RootUrl),
+            Account = AppSettings.Load().Account,
             PasswordProvider = CredentialManager.Load,
         });
 
@@ -176,6 +182,7 @@ public partial class App : Application
     {
         var settingsWindow = new SettingsWindow { Owner = MainWindow };
         settingsWindow.ShowDialog();
+        Settings = AppSettings.Load(); // 保存后立即刷新内存快照
         _mainVm?.ReloadFromDb();
     }
 
