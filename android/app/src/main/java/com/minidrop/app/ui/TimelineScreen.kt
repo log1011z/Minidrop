@@ -12,11 +12,21 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CloseFullscreen
+import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -28,9 +38,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,13 +58,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.minidrop.app.R
 
 /** 时间线 + 输入栏（§10.4）：只读 Room，刷新/加载更早为显式用户动作。 */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun TimelineScreen(
     onOpenSettings: () -> Unit,
@@ -62,7 +78,14 @@ fun TimelineScreen(
     var deleteTarget by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
 
+    val pickFiles = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris -> vm.onFilesPicked(uris) }
+
     Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding(), // 输入法调起时输入栏浮在键盘上方
         topBar = {
             TopAppBar(
                 title = { Text("MiniDrop") },
@@ -77,25 +100,69 @@ fun TimelineScreen(
             )
         },
         bottomBar = {
-            Column {
+            Column(Modifier.navigationBarsPadding()) {
                 HorizontalDivider()
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .padding(8.dp),
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.Bottom,
                 ) {
-                    OutlinedTextField(
-                        value = state.input,
-                        onValueChange = vm::onInputChange,
+                    var expanded by remember { mutableStateOf(false) }
+
+                    // 输入框容器：内嵌 + 号与放大按钮
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.weight(1f),
-                        placeholder = { Text(stringResourceCompat(context, R.string.input_hint)) },
-                        maxLines = 4,
-                    )
+                    ) {
+                        Row(verticalAlignment = Alignment.Bottom) {
+                            IconButton(onClick = { pickFiles.launch(arrayOf("*/*")) }) {
+                                Icon(Icons.Filled.Add, contentDescription = "添加文件",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            BasicTextField(
+                                value = state.input,
+                                onValueChange = vm::onInputChange,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(top = 8.dp, bottom = 8.dp)
+                                    .heightIn(min = 22.dp)
+                                    .heightIn(max = if (expanded) 220.dp else 96.dp)
+                                    .verticalScroll(rememberScrollState()),
+                                textStyle = LocalTextStyle.current.copy(fontSize = 15.sp),
+                                maxLines = if (expanded) 12 else 4,
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                decorationBox = { inner ->
+                                    Box {
+                                        if (state.input.isEmpty()) {
+                                            Text(
+                                                stringResourceCompat(context, R.string.input_hint),
+                                                style = LocalTextStyle.current.copy(
+                                                    fontSize = 15.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                ),
+                                            )
+                                        }
+                                        inner()
+                                    }
+                                },
+                            )
+                            IconButton(onClick = { expanded = !expanded }) {
+                                Icon(
+                                    if (expanded) Icons.Filled.CloseFullscreen else Icons.Filled.OpenInFull,
+                                    contentDescription = if (expanded) "收起输入框" else "放大输入框",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+
                     Button(
                         onClick = { vm.sendInput() },
                         enabled = !state.busy && state.input.isNotBlank(),
-                        modifier = Modifier.padding(start = 8.dp),
+                        modifier = Modifier
+                            .padding(start = 8.dp, bottom = 2.dp),
                     ) {
                         Text(stringResourceCompat(context, R.string.send))
                     }

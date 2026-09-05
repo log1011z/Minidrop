@@ -114,6 +114,35 @@ class TimelineViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 输入栏 + 按钮选择的文件：复制到 staging → 入队（§5.5）。 */
+    fun onFilesPicked(uris: List<android.net.Uri>) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            busy.value = true
+            status.value = "正在接收所选文件…"
+            try {
+                val app = getApplication<MiniDropApp>()
+                when (val result = com.minidrop.app.sync.Staging.copyAll(
+                    app, uris, app.settingsSnapshot.maxFileBytes,
+                ) { index, total -> status.value = "正在复制 ${index + 1}/$total…" }) {
+                    is com.minidrop.app.sync.Staging.CopyResult.TooLarge -> status.value = result.text
+                    is com.minidrop.app.sync.Staging.CopyResult.Failed -> status.value = result.text
+                    is com.minidrop.app.sync.Staging.CopyResult.Ok -> {
+                        when (val send = ctx.send.enqueueFiles(result.files, null)) {
+                            is com.minidrop.app.sync.SendResult.Ok -> status.value = "已加入 ${result.files.size} 个文件"
+                            is com.minidrop.app.sync.SendResult.Fail -> {
+                                status.value = send.text
+                                com.minidrop.app.sync.Staging.cleanup(result.files)
+                            }
+                        }
+                    }
+                }
+            } finally {
+                busy.value = false
+            }
+        }
+    }
+
     fun delete(messageId: String) {
         viewModelScope.launch {
             busy.value = true
