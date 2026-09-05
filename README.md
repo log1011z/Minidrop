@@ -60,6 +60,20 @@ dotnet test tests/MiniDrop.Tests/MiniDrop.Tests.csproj
 dotnet run --project src/MiniDrop.Windows
 ```
 
+### 打包为独立 exe
+
+自包含单文件发布（内置 .NET 运行时，目标机器无需安装任何依赖）：
+
+```powershell
+cd windows
+dotnet publish src/MiniDrop.Windows/MiniDrop.Windows.csproj `
+  -c Release -r win-x64 --self-contained true `
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+  -p:EnableCompressionInSingleFile=true -o publish
+```
+
+产物：`windows/publish/MiniDrop.Windows.exe`（约 66 MB，双击即用；首次启动会解压原生库到临时目录，稍慢属正常）。
+
 - 首次运行：创建 SendTo 菜单项；按 `Ctrl+Shift+D` 呼出；右上角 ⚙ 完成设置（坚果云账号 + **应用密码**，非登录密码）。
 - 应用密码保存在 Windows 凭据管理器（目标 `MiniDrop/WebDAV`）。
 - 数据库/缓存位置：`%LOCALAPPDATA%\MiniDrop\`。
