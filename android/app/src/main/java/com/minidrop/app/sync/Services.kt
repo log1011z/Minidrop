@@ -210,13 +210,19 @@ class UploadPump(
     private suspend fun classifyFailure(job: com.minidrop.app.data.db.UploadJobEntity, result: com.minidrop.app.webdav.DavResult, detail: String) {
         val code = ErrorClassifier.toErrorCode(result)
         if (ErrorCodes.isTransient(code)) {
-            toRetryWait(job.messageId, job.attempts, code, result.retryAfter)
+            toRetryWait(job.messageId, job.attempts, code, result.retryAfter, result.detail)
         } else {
             failJob(job.messageId, job.attempts, code, detail)
         }
     }
 
-    private suspend fun toRetryWait(messageId: String, attempts: Int, code: String, retryAfterMs: Long?) {
+    private suspend fun toRetryWait(
+        messageId: String,
+        attempts: Int,
+        code: String,
+        retryAfterMs: Long?,
+        detail: String?,
+    ) {
         val nextAttempts = attempts + 1
         if (nextAttempts >= ErrorCodes.MAX_TRANSIENT_ATTEMPTS) {
             failJob(messageId, attempts, code, "连续失败达到上限")
@@ -226,7 +232,7 @@ class UploadPump(
         val delayMs = retryAfterMs?.takeIf { it > local } ?: local
         db.jobDao().setState(
             messageId, JobStates.RETRY_WAIT, nextAttempts,
-            System.currentTimeMillis() + delayMs, code, null, nowUtcString(),
+            System.currentTimeMillis() + delayMs, code, detail, nowUtcString(),
         )
     }
 

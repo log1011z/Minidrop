@@ -188,14 +188,16 @@ private suspend fun testConnection(rootUrl: String, account: String, password: S
     val client = WebDavClient(normalized, account, { password }, timeoutSeconds = 15)
     val (propfind, _) = client.propfindDir("")
     if (propfind.status == com.minidrop.app.webdav.DavStatus.AUTH_ERROR) return false to "账号或应用密码不可用"
-    if (!propfind.ok && propfind.status != com.minidrop.app.webdav.DavStatus.NOT_FOUND) return false to "服务不可达"
+    if (!propfind.ok && propfind.status != com.minidrop.app.webdav.DavStatus.NOT_FOUND) {
+        return false to "服务不可达：" + (propfind.detail ?: propfind.status.toString())
+    }
     for (dir in listOf(
         com.minidrop.app.core.RemotePaths.ITEMS_ROOT,
         com.minidrop.app.core.RemotePaths.TOMBSTONES_ROOT,
         com.minidrop.app.core.RemotePaths.FILES_ROOT,
     )) {
         val mk = client.mkCol(dir)
-        if (!mk.ok && mk.httpCode != 405) return false to "无法创建目录 $dir"
+        if (!mk.ok && mk.httpCode != 405) return false to "无法创建目录 $dir（" + (mk.detail ?: mk.status.toString()) + "）"
     }
     return true to null
 }

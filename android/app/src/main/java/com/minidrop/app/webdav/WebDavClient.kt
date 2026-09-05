@@ -27,6 +27,7 @@ data class DavResult(
     val status: DavStatus,
     val httpCode: Int? = null,
     val retryAfter: Long? = null, // 毫秒
+    val detail: String? = null,
 ) {
     val ok: Boolean get() = status == DavStatus.SUCCESS || status == DavStatus.ALREADY_EXISTS_OR_CREATED
 }
@@ -108,6 +109,7 @@ class WebDavClient(
 
     fun absoluteUri(relativePath: String): String {
         val segments = relativePath.split('/').filter { it.isNotEmpty() }
+        if (segments.isEmpty()) return root
         val encoded = segments.joinToString("/") { java.net.URLEncoder.encode(it, "UTF-8")
             .replace("+", "%20") }
         val trailing = if (relativePath.endsWith('/')) "/" else ""
@@ -133,9 +135,15 @@ class WebDavClient(
         }
     }
 
-    private fun fromException(e: Exception): DavResult = when (e) {
-        is IOException -> DavResult(DavStatus.NETWORK_ERROR)
-        else -> DavResult(DavStatus.PROTOCOL_ERROR)
+    private fun fromException(e: Exception): DavResult {
+        // 递归取最内层异常：真实原因（DNS/代理/连接重置/超时）在内层
+        var root: Throwable = e
+        while (root.cause != null && root.cause !== root) root = root.cause!!
+        val status = when (e) {
+            is IOException -> DavStatus.NETWORK_ERROR
+            else -> DavStatus.PROTOCOL_ERROR
+        }
+        return DavResult(status, null, detail = root.javaClass.simpleName + ": " + root.message)
     }
 
     suspend fun mkCol(relativePath: String): DavResult = gate.run("Mkcol", false) {

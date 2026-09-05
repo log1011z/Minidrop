@@ -69,8 +69,10 @@ public sealed class WebDavClient : IDisposable
     public Uri AbsoluteUri(string relativePath)
     {
         var segments = relativePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+            return new Uri(_options.RootUrl); // 根目录 PROPFIND 不产生双斜杠
         var encoded = string.Join("/", segments.Select(Uri.EscapeDataString));
-        return new Uri(_options.RootUrl + encoded + (segments.Length > 0 && relativePath.EndsWith('/') ? "/" : ""));
+        return new Uri(_options.RootUrl + encoded + (relativePath.EndsWith('/') ? "/" : ""));
     }
 
     // ---------- 操作 ----------
