@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>MiniDrop WebDAV 适配：PROPFIND 分页、错误分类、请求闸门</Description>
+    <RootNamespace>MiniDrop.WebDav</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MiniDrop.Domain\MiniDrop.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

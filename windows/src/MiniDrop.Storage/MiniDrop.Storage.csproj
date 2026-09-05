@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>MiniDrop 本地存储：SQLite DDL、DAO、事务（本地事实源）</Description>
+    <RootNamespace>MiniDrop.Storage</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MiniDrop.Domain\MiniDrop.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

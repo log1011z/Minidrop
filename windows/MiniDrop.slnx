@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MiniDrop.Application/MiniDrop.Application.csproj" />
+    <Project Path="src/MiniDrop.Domain/MiniDrop.Domain.csproj" />
+    <Project Path="src/MiniDrop.Storage/MiniDrop.Storage.csproj" />
+    <Project Path="src/MiniDrop.WebDav/MiniDrop.WebDav.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MiniDrop.Tests/MiniDrop.Tests.csproj" />
+  </Folder>
+</Solution>

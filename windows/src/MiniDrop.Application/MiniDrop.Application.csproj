@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>MiniDrop 应用层：发送、上传泵、手动同步、删除、下载、维护</Description>
+    <RootNamespace>MiniDrop.Application</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MiniDrop.Domain\MiniDrop.Domain.csproj" />
+    <ProjectReference Include="..\MiniDrop.Storage\MiniDrop.Storage.csproj" />
+    <ProjectReference Include="..\MiniDrop.WebDav\MiniDrop.WebDav.csproj" />
+  </ItemGroup>
+
+</Project>

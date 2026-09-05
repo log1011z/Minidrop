@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>MiniDrop 协议核心：ULID、月份路径、消息/墓碑 JSON 校验、错误码</Description>
+    <RootNamespace>MiniDrop.Domain</RootNamespace>
+  </PropertyGroup>
+
+</Project>

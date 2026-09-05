@@ -6,6 +6,12 @@
   "created_at": "2026-09-05T06:30:00.123Z",
   "text": "mime 128 字符",
   "files": [
-    { "id": "550e8400-e29b-41d4-a716-446655440000", "name": "a.bin", "size": 1, "mime": "application/x-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "sha256": null }
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "a.bin",
+      "size": 1,
+      "mime": "application/x-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sha256": null
+    }
   ]
 }
