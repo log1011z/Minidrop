@@ -82,7 +82,9 @@ class SendService(
                     FileEntity(
                         fileId = java.util.UUID.randomUUID().toString(),
                         messageId = id, idx = i, name = f.displayName,
-                        size = f.file.length(), mime = null, sha256 = null,
+                        size = f.file.length(),
+                        mime = com.minidrop.app.core.MimeTypes.fromName(f.displayName),
+                        sha256 = null,
                         direction = "out", sourcePath = f.file.absolutePath,
                         sourceModifiedAt = f.file.lastModified(), cachePath = null,
                         state = FileStates.PENDING,
@@ -311,7 +313,10 @@ class DownloadService(
         var documentUri: android.net.Uri? = null
         return try {
             val target = SafeDownloads.ensureDocument(
-                context, treeUri, file.name, file.mime ?: "application/octet-stream",
+                context, treeUri, file.name,
+                file.mime?.takeIf { it != "application/octet-stream" }
+                    ?: com.minidrop.app.core.MimeTypes.fromName(file.name)
+                    ?: "application/octet-stream",
             ) ?: run {
                 db.fileDao().setState(fileId, FileStates.FAILED)
                 return Result.Fail("下载目录不可用，请到设置中重新选择")

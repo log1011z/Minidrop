@@ -75,7 +75,7 @@ public sealed class SendService(
             Idx: i,
             Name: Path.GetFileName(f.Path),
             Size: f.Size,
-            Mime: null,
+            Mime: MimeMap.FromPath(f.Path),
             Sha256: null,
             Dir: Direction.Out,
             SourcePath: f.Path,
@@ -108,6 +108,53 @@ public sealed class SendService(
             >= 1024 => $"{bytes / 1024.0:0.#} KB",
             _ => $"{bytes} B",
         };
+    }
+}
+
+/// <summary>常见扩展名 → MIME（发送时写入消息 JSON，接收端据此选择打开方式）。</summary>
+public static class MimeMap
+{
+    private static readonly Dictionary<string, string> Map = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [".pdf"] = "application/pdf",
+        [".png"] = "image/png",
+        [".jpg"] = "image/jpeg",
+        [".jpeg"] = "image/jpeg",
+        [".gif"] = "image/gif",
+        [".webp"] = "image/webp",
+        [".svg"] = "image/svg+xml",
+        [".bmp"] = "image/bmp",
+        [".txt"] = "text/plain",
+        [".md"] = "text/markdown",
+        [".csv"] = "text/csv",
+        [".json"] = "application/json",
+        [".xml"] = "application/xml",
+        [".html"] = "text/html",
+        [".htm"] = "text/html",
+        [".doc"] = "application/msword",
+        [".docx"] = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        [".xls"] = "application/vnd.ms-excel",
+        [".xlsx"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        [".ppt"] = "application/vnd.ms-powerpoint",
+        [".pptx"] = "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        [".zip"] = "application/zip",
+        [".7z"] = "application/x-7z-compressed",
+        [".rar"] = "application/vnd.rar",
+        [".gz"] = "application/gzip",
+        [".mp3"] = "audio/mpeg",
+        [".wav"] = "audio/wav",
+        [".flac"] = "audio/flac",
+        [".ogg"] = "audio/ogg",
+        [".mp4"] = "video/mp4",
+        [".mov"] = "video/quicktime",
+        [".mkv"] = "video/x-matroska",
+        [".avi"] = "video/x-msvideo",
+    };
+
+    public static string? FromPath(string path)
+    {
+        var ext = Path.GetExtension(path);
+        return ext.Length > 0 && Map.TryGetValue(ext, out var mime) ? mime : null;
     }
 }
 

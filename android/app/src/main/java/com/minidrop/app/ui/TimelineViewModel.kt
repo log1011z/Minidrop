@@ -167,7 +167,10 @@ class TimelineViewModel(app: Application) : AndroidViewModel(app) {
             ctx.download.ensureCacheConsistency(fileId)
             val file = ctx.db.fileDao().getById(fileId) ?: return@launch
             val path = file.cachePath ?: return@launch
-            val mime = file.mime ?: "application/octet-stream"
+            // 旧消息可能没有 mime：优先扩展名推断，避免用 octet-stream 打不开
+            val mime = file.mime?.takeIf { it.isNotBlank() && it != "application/octet-stream" }
+                ?: com.minidrop.app.core.MimeTypes.fromName(file.name)
+                ?: "application/octet-stream"
             try {
                 // SAF 目录下载的文件直接用 content uri；私有目录走 FileProvider
                 val uri = if (path.startsWith("content:")) {
