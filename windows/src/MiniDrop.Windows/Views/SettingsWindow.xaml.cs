@@ -61,6 +61,8 @@ public partial class SettingsWindow : Window
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => DialogResult = false;
 
+    private void CloseTitleButton_Click(object sender, RoutedEventArgs e) => DialogResult = false;
+
     private async void MaintainRemote_Click(object sender, RoutedEventArgs e)
     {
         if (MessageBox.Show(this, "扫描 90 天前月份并清理远端记录？", "MiniDrop",

@@ -47,6 +47,37 @@ public partial class MainWindow : Window
 
     public void HideToTray() => Hide();
 
+    // ---------- 自定义标题栏 ----------
+
+    private void MinimizeButton_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void MaximizeButton_Click(object sender, RoutedEventArgs e) =>
+        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e) => TryHideToTray();
+
+    /// <summary>关闭/隐藏到托盘：首次给出气泡提示（§9.4）。</summary>
+    private void TryHideToTray()
+    {
+        HideToTray();
+        if (!_hintedOnce)
+        {
+            _hintedOnce = true;
+            App.ShowTrayBalloon("MiniDrop 仍在后台运行",
+                "点击托盘图标重新打开窗口；右键托盘图标 → 退出");
+        }
+    }
+
+    protected override void OnStateChanged(EventArgs e)
+    {
+        base.OnStateChanged(e);
+        var maximized = WindowState == WindowState.Maximized;
+        RootBorder.CornerRadius = maximized ? new CornerRadius(0) : new CornerRadius(8);
+        RootBorder.Margin = maximized ? new Thickness(6) : new Thickness(0);
+        if (MaxRestoreButton is not null)
+            MaxRestoreButton.Content = maximized ? "\uE923" : "\uE922";
+    }
+
     // ---------- 热键/关闭行为 ----------
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -66,15 +97,9 @@ public partial class MainWindow : Window
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        // 关闭按钮 → 隐藏到托盘（§9.4）；首次关闭给出气泡提示
+        // Alt+F4 等系统关闭 → 隐藏到托盘（§9.4）
         e.Cancel = true;
-        HideToTray();
-        if (!_hintedOnce)
-        {
-            _hintedOnce = true;
-            App.ShowTrayBalloon("MiniDrop 仍在后台运行",
-                "点击托盘图标重新打开窗口；右键托盘图标 → 退出");
-        }
+        TryHideToTray();
     }
 
     private void AddFilesButton_Click(object sender, RoutedEventArgs e)

@@ -60,19 +60,26 @@ dotnet test tests/MiniDrop.Tests/MiniDrop.Tests.csproj
 dotnet run --project src/MiniDrop.Windows
 ```
 
-### 打包为独立 exe
+### 打包 Windows exe
 
-自包含单文件发布（内置 .NET 运行时，目标机器无需安装任何依赖）：
+两种模式（产物分别为 `windows/publish/` 与 `windows/publish-sc/`）：
 
 ```powershell
 cd windows
+# 依赖框架：约 1.6 MB，需目标机器装有 .NET Desktop Runtime 10
+dotnet publish src/MiniDrop.Windows/MiniDrop.Windows.csproj `
+  -c Release -r win-x64 --self-contained false `
+  -p:PublishSingleFile=true -o publish
+
+# 自包含：约 66 MB，无需任何依赖（发给别人用这个）
 dotnet publish src/MiniDrop.Windows/MiniDrop.Windows.csproj `
   -c Release -r win-x64 --self-contained true `
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-  -p:EnableCompressionInSingleFile=true -o publish
+  -p:EnableCompressionInSingleFile=true -o publish-sc
 ```
 
-产物：`windows/publish/MiniDrop.Windows.exe`（约 66 MB，双击即用；首次启动会解压原生库到临时目录，稍慢属正常）。
+依赖框架版要求系统可发现运行时：官方安装器会写注册表/环境变量；用户级
+安装（dotnet-install 脚本）需设置用户环境变量 `DOTNET_ROOT` 指向运行时目录。
 
 - 首次运行：创建 SendTo 菜单项；按 `Ctrl+Shift+D` 呼出；右上角 ⚙ 完成设置（坚果云账号 + **应用密码**，非登录密码）。
 - 应用密码保存在 Windows 凭据管理器（目标 `MiniDrop/WebDAV`）。
