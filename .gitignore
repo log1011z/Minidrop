@@ -57,3 +57,5 @@ windows/publish-sc/
 /publish/
 /publish-sc/
 android/mapping*.txt
+android/keystore.properties
+keystore.properties
