@@ -56,3 +56,4 @@ windows/publish-sc/
 # 根目录误产生的发布副本
 /publish/
 /publish-sc/
+android/mapping*.txt
