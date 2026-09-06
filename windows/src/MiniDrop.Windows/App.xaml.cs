@@ -22,6 +22,7 @@ public partial class App : Application
 
     public static AppSettings Settings { get; private set; } = null!;
     public static Database Db { get; private set; } = null!;
+    public static WebDav.RequestGate Gate { get; } = new();
     public static IDiagLog Log { get; private set; } = null!;
     public static Func<AppOptions> OptionsFactory { get; private set; } = null!;
 
@@ -92,7 +93,7 @@ public partial class App : Application
             RootUrl = WebDavClient.NormalizeRootUrl(AppSettings.Load().RootUrl),
             Account = AppSettings.Load().Account,
             PasswordProvider = CredentialManager.Load,
-        });
+        }, Gate);
 
         _pump = new UploadPump(Db, DavFactory, OptionsFactory, transfers, Log);
         _pump.StartBackgroundLoop(((App)Current).GetAppCts().Token);
