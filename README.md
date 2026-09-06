@@ -1,115 +1,108 @@
+<div align="center">
+
 # MiniDrop
 
-个人多设备间的 self-chat 式投递工具：把文字或文件丢进一条共同 Timeline，另一台设备在需要时手动刷新；文件本体只在点开时才下载。存储为坚果云 WebDAV，接收侧零后台请求。
+**个人多设备间的 self-chat 式文件与文字投递工具**
 
-> 设计文档见 [DESIGN.md](DESIGN.md)；跨端协议契约见 [docs/PROTOCOL.md](docs/PROTOCOL.md)。
+以聊天时间线为界面、以坚果云 WebDAV 为公共存储。
+电脑上丢进一段文字或一个文件，拿起手机点一下刷新即可取用——反之亦然。
 
-## 仓库结构
+`Windows` · `Android` · `WebDAV` · `WPF` · `Jetpack Compose`
+
+</div>
+
+---
+
+## 特性
+
+- **聊天时间线**：文字与文件以消息形式呈现，支持多文件一条消息
+- **手动可控的同步**：刷新只看最近 20 条，更早记录按需分批加载；接收侧**零后台请求**（不轮询、不推送、不监听网络）
+- **可靠上传**：本地 SQLite 队列 + 后台泵，逐文件上传成功后才发布消息；失败自动退避重试，无需干预
+- **跨设备删除**：墓碑协议保证任一端删除、全端收敛，崩溃可恢复
+- **文件按需下载**：SHA-256 校验，点击才下载；Windows 下载目录可选，Android 支持系统目录选择（SAF）
+- **安全**：HTTPS only；凭据存 Windows 凭据管理器 / Android Keystore（AES-256-GCM）；日志不落密码与正文
+- **90 天生命周期**：本地按 ULID 时间戳清理，远端按需维护
+
+## 工作原理
 
 ```
-MiniDrop/
-├── DESIGN.md              # 设计文档 v1.1（冻结）
-├── docs/PROTOCOL.md       # 跨端协议规范（路径/Schema/错误码/状态机/同步算法）
-├── docs/M0-RESULTS.md     # M0 实测结论（用 m0 工具跑完后回填）
-├── fixtures/              # 共享协议夹具（C# 与 Kotlin 测试读同一批文件）
-├── m0/MiniDrop.M0/        # M0 实测控制台工具（§16 十项检查）
-├── windows/               # Windows 客户端（.NET 10 + WPF）
-│   ├── src/
-│   │   ├── MiniDrop.Domain/       # ULID、消息/墓碑 JSON 严格校验、路径、错误码
-│   │   ├── MiniDrop.Storage/      # SQLite DDL、DAO、事务（本地事实源）
-│   │   ├── MiniDrop.WebDav/       # MKCOL/PROPFIND 分页/PUT/GET/DELETE、错误分类、RequestGate
-│   │   ├── MiniDrop.Application/  # 发送、上传泵、手动同步、删除、下载、维护
-│   │   └── MiniDrop.Windows/      # WPF UI、托盘、热键、单实例、SendTo、设置
-│   └── tests/MiniDrop.Tests/      # 89 个用例（夹具驱动、状态机、同步窗口、故障注入）
-└── android/               # Android 客户端（Kotlin + Compose M3 + Room + WorkManager）
-    └── app/src/
-        ├── main/java/com/minidrop/app/
-        │   ├── core/      # 与 C# 严格对齐的协议实现
-        │   ├── data/      # Room 数据库、DataStore、Keystore 加密
-        │   ├── webdav/    # OkHttp WebDAV 适配
-        │   ├── sync/      # 上传泵 Worker、同步协调器、删除/下载/维护
-        │   └── ui/        # Compose 时间线、设置、分享接收
-        └── test/          # 夹具驱动 JUnit 测试
+Windows (WPF)                         Android (Compose)
+┌──────────────────┐                 ┌──────────────────┐
+│ 时间线 / 托盘 / 热键 │                 │ 时间线 / 分享接收    │
+│ 上传泵 / 手动同步   │                 │ 上传泵(WorkManager) │
+│ SQLite 队列       │                 │ Room 队列          │
+└────────┬─────────┘                 └────────┬─────────┘
+         └────────── 坚果云 WebDAV ────────────┘
+              items/<月份>/<ULID>.json
+              tombstones/<月份>/<ULID>.json
+              files/<uuid>
 ```
 
-两端不共享实现代码，共享：远端协议、SQLite DDL 语义、状态迁移表、JSON Schema 与测试夹具。
+- 消息 ULID 的时间戳决定月份目录与 90 天生命周期
+- 创建：文件全部上传成功后才发布消息 JSON（一次 PUT 即提交）
+- 删除：墓碑 → 文件 → 消息 JSON（最后删除），任一步骤中断下次扫描自动收敛
+- 协议细节见 [docs/PROTOCOL.md](docs/PROTOCOL.md)，完整设计见 [DESIGN.md](DESIGN.md)
 
-## 核心行为（V1 冻结规则）
+## 构建
 
-1. 手动刷新只观察远端最近 20 条；更早记录每次按需加载 20 条。
-2. **接收侧零后台**：不自动刷新、不轮询、不监听网络恢复；空闲时 WebDAV 请求为 0。
-3. 上传由持久队列后台可靠执行：文件全部 PUT 成功后才发布消息 JSON（创建 commit）。
-4. 删除顺序：墓碑 → 文件 → 消息 JSON（item 最后删除，保证崩溃可收敛）。
-5. 远端文件对象名只用 UUID；原文件名只存于消息 JSON。
-6. 90 天本地生命周期按 ULID 时间戳计算；远端维护按需触发（单次 ≤ 100 条）。
-
-## Windows 构建与运行
-
-要求：.NET 10 SDK（本机已通过 [dotnet-install](https://dot.net/v1/dotnet-install.ps1) 装到 `%LOCALAPPDATA%\Microsoft\dotnet`）。
+### Windows（.NET 10 + WPF）
 
 ```powershell
-# 若 dotnet 不在 PATH：
-$env:DOTNET_ROOT = "$env:LOCALAPPDATA\Microsoft\dotnet"
-$env:PATH = "$env:DOTNET_ROOT;$env:PATH"
-
 cd windows
 dotnet build MiniDrop.slnx
-dotnet test tests/MiniDrop.Tests/MiniDrop.Tests.csproj
+dotnet test tests/MiniDrop.Tests/MiniDrop.Tests.csproj    # 91 个单元测试
 
-# 运行
-dotnet run --project src/MiniDrop.Windows
-```
-
-### 打包 Windows exe
-
-两种模式（产物分别为 `windows/publish/` 与 `windows/publish-sc/`）：
-
-```powershell
-cd windows
-# 依赖框架：约 1.6 MB，需目标机器装有 .NET Desktop Runtime 10
+# 依赖框架版（约 1.6 MB，需安装 .NET Desktop Runtime 10）
 dotnet publish src/MiniDrop.Windows/MiniDrop.Windows.csproj `
   -c Release -r win-x64 --self-contained false `
   -p:PublishSingleFile=true -o publish
 
-# 自包含：约 66 MB，无需任何依赖（发给别人用这个）
+# 自包含版（约 66 MB，免安装运行时）
 dotnet publish src/MiniDrop.Windows/MiniDrop.Windows.csproj `
   -c Release -r win-x64 --self-contained true `
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
   -p:EnableCompressionInSingleFile=true -o publish-sc
 ```
 
-依赖框架版要求系统可发现运行时：官方安装器会写注册表/环境变量；用户级
-安装（dotnet-install 脚本）需设置用户环境变量 `DOTNET_ROOT` 指向运行时目录。
-
-- 首次运行：创建 SendTo 菜单项；按 `Ctrl+Shift+D` 呼出；右上角 ⚙ 完成设置（坚果云账号 + **应用密码**，非登录密码）。
-- 应用密码保存在 Windows 凭据管理器（目标 `MiniDrop/WebDAV`）。
-- 数据库/缓存位置：`%LOCALAPPDATA%\MiniDrop\`。
-
-## Android 构建
-
-要求：JDK 17、Android SDK（compileSdk 35）。用 Android Studio 打开 `android/` 直接运行，或命令行：
+### Android（Kotlin + Compose，minSdk 26）
 
 ```bash
 cd android
-./gradlew assembleDebug        # 产物：app/build/outputs/apk/debug/app-debug.apk
-./gradlew testDebugUnitTest    # 夹具测试
+./gradlew assembleDebug        # app/build/outputs/apk/debug/app-debug.apk
+./gradlew testDebugUnitTest    # 与 C# 共享同一批协议夹具
 ```
 
-Gradle Wrapper 已包含（`gradle-8.9`）。如 `distributionUrl` 下载慢，可在 `gradle/wrapper/gradle-wrapper.properties` 换成腾讯/阿里镜像。
+要求 JDK 17+（Android Studio 自带 JBR 25 时，请在 Gradle 设置中选择 JDK 17/21）。
+国内网络可在 `gradle/wrapper/gradle-wrapper.properties` 使用腾讯镜像（本仓库默认已配置）。
 
-## M0 实测（首次接入坚果云前执行）
+## 使用
 
-```bash
-set MINIDROP_PASS=<应用密码>
-dotnet run --project m0/MiniDrop.M0 -- \
-  --url https://dav.jianguoyun.com/dav/MiniDropM0Test/ \
-  --user <坚果云账号> --pass-env MINIDROP_PASS
+1. 在坚果云网页版「安全选项」中生成**应用密码**（不要使用登录密码）
+2. Windows：启动后按 `Ctrl+Shift+D`，右上角 ⚙ 填入账号与应用密码，测试连接后保存
+3. Android：⚙ 设置中同样配置
+4. 任一端发送，另一端手动刷新即可看到；文件点击下载后打开
+5. 可选：运行 `m0/MiniDrop.M0` 工具在真实账号上验证服务行为（见 [docs/M0-RESULTS.md](docs/M0-RESULTS.md)）
+
+## 仓库结构
+
+```
+├── DESIGN.md            # 详细设计文档（v1.1，冻结）
+├── docs/PROTOCOL.md     # 跨端协议契约（路径/Schema/错误码/状态机）
+├── docs/M0-RESULTS.md   # 真实服务实测结论模板
+├── fixtures/            # 跨端共享协议夹具（C# 与 Kotlin 测试读同一批文件）
+├── m0/MiniDrop.M0/      # 坚果云实测控制台工具
+├── windows/             # WPF 客户端（Domain/Storage/WebDav/Application/UI 分层）
+└── android/             # Compose 客户端（core/data/webdav/sync/ui）
 ```
 
-工具执行 §16 的安全检查（MKCOL 行为、PUT 覆盖、PROPFIND 分页线索、DELETE 404、编码与尾斜线等），`--aggressive` 追加大文件中断实验。结果人工核对后回填 `docs/M0-RESULTS.md`；若与约定不符，只需调整 `PropfindPager` 适配器（C# `MiniDrop.WebDav/PropfindPager`，Kotlin `webdav/WebDavClient.kt` 中的同类）。
+两端不共享实现代码，共享：远端协议、SQLite DDL 语义、状态机与测试夹具，
+由 fixtures 驱动的两端测试保证行为一致。
 
-## 数据与隐私
+## 测试
 
-- 本地 SQLite/Room 与缓存均在应用私有目录；密码存 Windows 凭据管理器 / Android Keystore（AES-256-GCM）。
-- 日志不含 Authorization、密码、消息正文、文件内容。
-- 远端（坚果云）保存明文消息与文件——V1 接受此信任边界（见 §13）。
+- Windows：xUnit，91 个用例（协议夹具、上传状态机、同步窗口、删除故障注入、下载校验）
+- Android：JUnit，同一批夹具（协议一致性、ULID/月份边界、墓碑解析）
+
+## 许可证
+
+[MIT](LICENSE)

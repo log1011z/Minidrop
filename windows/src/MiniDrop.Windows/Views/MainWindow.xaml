@@ -43,10 +43,21 @@
             </Border>
         </DataTemplate>
 
-        <!-- 消息卡：白底圆角 8 -->
+        <!-- 消息卡：白底圆角 8，悬停高亮 -->
         <DataTemplate DataType="{x:Type vm:MessageViewModel}">
-            <Border Margin="12,5" Padding="12,9" Background="{StaticResource CardBackground}" CornerRadius="8"
-                    BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1">
+            <Border Margin="12,5" Padding="12,9" CornerRadius="8" BorderThickness="1">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{StaticResource CardBackground}" />
+                        <Setter Property="BorderBrush" Value="{StaticResource CardBorderBrush}" />
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#FBFDFF" />
+                                <Setter Property="BorderBrush" Value="#BFD4E8" />
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
                 <Border.ContextMenu>
                     <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                         <MenuItem Header="删除" Click="DeleteMenuItem_Click" />
@@ -99,10 +110,11 @@
 
             <!-- 自定义标题栏 -->
             <Border Grid.Row="0" Background="{StaticResource WindowBackground}" Padding="12,0">
-                <DockPanel LastChildFill="True">
-                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="MiniDrop" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" Foreground="#1B1B1B" />
-                    </StackPanel>
+                <DockPanel Height="40" LastChildFill="True">
+                    <Image DockPanel.Dock="Left" Source="pack://application:,,,/app.ico" Width="16" Height="16"
+                           RenderOptions.BitmapScalingMode="HighQuality" Margin="0,0,8,0" />
+                    <TextBlock DockPanel.Dock="Left" Text="MiniDrop" FontWeight="SemiBold" FontSize="13"
+                               VerticalAlignment="Center" Foreground="#1B1B1B" />
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                         <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="MinimizeButton_Click" />
                         <Button Style="{StaticResource CaptionButton}" x:Name="MaxRestoreButton" Content="&#xE922;" Click="MaximizeButton_Click" />
@@ -143,10 +155,9 @@
                         <TextBox x:Name="InputBox" Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged}"
                                  AcceptsReturn="True" TextWrapping="Wrap" MinHeight="46" MaxHeight="140"
                                  VerticalScrollBarVisibility="Auto"
-                                 KeyDown="InputBox_KeyDown" PreviewKeyDown="InputBox_PreviewKeyDown" />
+                                 KeyDown="InputBox_KeyDown" PreviewKeyDown="InputBox_PreviewKeyDown"
+                                 ToolTip="支持拖入文件、Ctrl+V 粘贴文件或文字" />
                     </DockPanel>
-                    <TextBlock Text="支持拖入文件、Ctrl+V 粘贴文件或文字、右下角添加文件" FontSize="11"
-                               Foreground="{StaticResource MutedBrush}" Margin="2,5,0,0" />
                 </StackPanel>
             </Border>
 
