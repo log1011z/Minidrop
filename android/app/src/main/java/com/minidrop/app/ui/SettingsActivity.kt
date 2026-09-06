@@ -2,7 +2,9 @@ package com.minidrop.app.ui
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.minidrop.app.MiniDropApp
 import com.minidrop.app.data.SettingsStore
@@ -55,6 +58,7 @@ class SettingsActivity : ComponentActivity() {
 @Composable
 private fun SettingsScreen(app: MiniDropApp, onFinish: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var rootUrl by remember { mutableStateOf(app.settingsSnapshot.rootUrl) }
     var account by remember { mutableStateOf(app.settingsSnapshot.account) }
     var password by remember { mutableStateOf("") }
@@ -63,6 +67,33 @@ private fun SettingsScreen(app: MiniDropApp, onFinish: () -> Unit) {
     var status by remember { mutableStateOf("") }
     var testing by remember { mutableStateOf(false) }
     var originalAccount by remember { mutableStateOf(app.settingsSnapshot.account) }
+    var downloadDirName by remember {
+        mutableStateOf(
+            app.settingsSnapshot.downloadTreeUri
+                ?.let { com.minidrop.app.sync.SafeDownloads.treeDisplayName(it) }
+                ?: "应用私有目录",
+        )
+    }
+    val pickTree = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                    )
+                    app.settings.saveDownloadTree(uri.toString())
+                }
+                downloadDirName = com.minidrop.app.sync.SafeDownloads.treeDisplayName(uri.toString())
+                    ?: uri.lastPathSegment
+                    ?: "已选择"
+                status = "下载目录已更新：新下载的文件将保存到所选目录"
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -99,6 +130,22 @@ private fun SettingsScreen(app: MiniDropApp, onFinish: () -> Unit) {
                 value = maxFileMb, onValueChange = { maxFileMb = it.filter { c -> c.isDigit() } },
                 label = { Text("单文件上限 (MB)") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
             )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("下载目录", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        downloadDirName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                OutlinedButton(onClick = { pickTree.launch(null) }) { Text("选择目录") }
+            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(

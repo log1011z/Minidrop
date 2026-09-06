@@ -74,7 +74,7 @@ class MiniDropApp : Application() {
         sync = SyncCoordinator(db, ::davFactory) { settingsSnapshot.maxFileBytes }
         maintenance = MaintenanceService(db, ::davFactory, { settingsSnapshot.maxFileBytes }, sync)
         delete = DeleteService(db, ::davFactory, { settingsSnapshot.deviceId }, sync)
-        download = DownloadService(this, db, ::davFactory)
+        download = DownloadService(this, db, ::davFactory) { settingsSnapshot.downloadTreeUri }
         send = SendService(
             context = this,
             db = db,

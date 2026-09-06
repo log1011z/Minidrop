@@ -169,9 +169,14 @@ class TimelineViewModel(app: Application) : AndroidViewModel(app) {
             val path = file.cachePath ?: return@launch
             val mime = file.mime ?: "application/octet-stream"
             try {
-                val uri = androidx.core.content.FileProvider.getUriForFile(
-                    getApplication<MiniDropApp>(), "com.minidrop.app.fileprovider", File(path),
-                )
+                // SAF 目录下载的文件直接用 content uri；私有目录走 FileProvider
+                val uri = if (path.startsWith("content:")) {
+                    android.net.Uri.parse(path)
+                } else {
+                    androidx.core.content.FileProvider.getUriForFile(
+                        getApplication<MiniDropApp>(), "com.minidrop.app.fileprovider", File(path),
+                    )
+                }
                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
                     .setDataAndType(uri, mime)
                     .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)

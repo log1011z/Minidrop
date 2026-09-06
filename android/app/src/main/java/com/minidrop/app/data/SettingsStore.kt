@@ -26,6 +26,7 @@ data class MiniDropSettings(
     val deviceName: String,
     val maxFileBytes: Long,
     val notifyOnSend: Boolean,
+    val downloadTreeUri: String? = null, // SAF 目录；null = 应用私有目录
 ) {
     val isConfigured: Boolean get() = account.isNotBlank()
 }
@@ -40,6 +41,7 @@ class SettingsStore(private val context: Context) {
         val MAX_FILE_BYTES = longPreferencesKey("max_file_bytes")
         val NOTIFY_ON_SEND = stringPreferencesKey("notify_on_send")
         val SECRET_BLOB = stringPreferencesKey("webdav_password_blob")
+        val DOWNLOAD_TREE = stringPreferencesKey("download_tree_uri")
     }
 
     companion object {
@@ -54,6 +56,7 @@ class SettingsStore(private val context: Context) {
             deviceName = p[Keys.DEVICE_NAME] ?: android.os.Build.MODEL?.take(32)?.ifBlank { "Android" } ?: "Android",
             maxFileBytes = p[Keys.MAX_FILE_BYTES] ?: 500L * 1024 * 1024,
             notifyOnSend = p[Keys.NOTIFY_ON_SEND] != "false",
+            downloadTreeUri = p[Keys.DOWNLOAD_TREE],
         )
     }
 
@@ -88,6 +91,13 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { p ->
             p.remove(Keys.ROOT_URL)
             p.remove(Keys.ACCOUNT)
+        }
+    }
+
+    /** 下载目录（SAF tree uri）；null = 应用私有目录。 */
+    suspend fun saveDownloadTree(uri: String?) {
+        context.dataStore.edit { p ->
+            if (uri == null) p.remove(Keys.DOWNLOAD_TREE) else p[Keys.DOWNLOAD_TREE] = uri
         }
     }
 

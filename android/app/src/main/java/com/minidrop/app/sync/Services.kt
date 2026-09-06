@@ -283,6 +283,7 @@ class DownloadService(
     private val context: Context,
     private val db: MiniDropDatabase,
     private val dav: () -> WebDavClient,
+    private val downloadTreeUri: () -> String? = { null }, // SAF 下载目录；null = 应用私有目录
 ) {
     sealed class Result {
         data class Ok(val cachePath: String) : Result()
@@ -291,9 +292,71 @@ class DownloadService(
 
     suspend fun download(fileId: String): Result {
         val file = db.fileDao().getById(fileId) ?: return Result.Fail("文件不存在")
-        if (file.state == FileStates.CACHED && file.cachePath != null && File(file.cachePath).exists()) {
-            return Result.Ok(file.cachePath)
+        if (file.state == FileStates.CACHED && !file.cachePath.isNullOrEmpty()) {
+            return Result.Ok(file.cachePath!!)
         }
+
+        // SAF 下载目录模式：文件落在用户选择的目录，文件管理器可见
+        val treeUri = downloadTreeUri()
+            ?.takeIf { SafeDownloads.isPersisted(context, it) }
+            ?.let { android.net.Uri.parse(it) }
+        if (treeUri != null) {
+            return downloadToSaf(fileId, file, treeUri)
+        }
+        return downloadToPrivate(fileId, file)
+    }
+
+    private suspend fun downloadToSaf(fileId: String, file: com.minidrop.app.data.db.FileEntity, treeUri: android.net.Uri): Result {
+        db.fileDao().setState(fileId, FileStates.DOWNLOADING)
+        var documentUri: android.net.Uri? = null
+        return try {
+            val target = SafeDownloads.ensureDocument(
+                context, treeUri, file.name, file.mime ?: "application/octet-stream",
+            ) ?: run {
+                db.fileDao().setState(fileId, FileStates.FAILED)
+                return Result.Fail("下载目录不可用，请到设置中重新选择")
+            }
+            documentUri = target
+
+            val sink = context.contentResolver.openOutputStream(target, "w")
+                ?: run {
+                    db.fileDao().setState(fileId, FileStates.FAILED)
+                    return Result.Fail("下载目录不可用，请到设置中重新选择")
+                }
+
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            var total = 0L
+            val result = sink.use { out ->
+                dav().getToStream(RemotePaths.filePath(fileId), out) { chunk ->
+                    digest.update(chunk)
+                    total += chunk.size
+                }
+            }
+            if (!result.ok) {
+                SafeDownloads.delete(context, target)
+                db.fileDao().setState(fileId, FileStates.FAILED)
+                return Result.Fail("下载失败，请重试")
+            }
+            val sha = digest.digest().joinToString("") { "%02x".format(it) }
+            if (total != file.size || (file.sha256 != null && file.sha256 != sha)) {
+                SafeDownloads.delete(context, target)
+                db.fileDao().setState(fileId, FileStates.FAILED)
+                return Result.Fail("文件校验失败，请重试")
+            }
+            db.fileDao().setCachePath(fileId, target.toString(), FileStates.CACHED)
+            Result.Ok(target.toString())
+        } catch (_: kotlinx.coroutines.CancellationException) {
+            documentUri?.let { SafeDownloads.delete(context, it) }
+            db.fileDao().setState(fileId, FileStates.REMOTE)
+            Result.Fail(null)
+        } catch (_: Exception) {
+            documentUri?.let { SafeDownloads.delete(context, it) }
+            db.fileDao().setState(fileId, FileStates.FAILED)
+            Result.Fail("下载失败，请重试")
+        }
+    }
+
+    private suspend fun downloadToPrivate(fileId: String, file: com.minidrop.app.data.db.FileEntity): Result {
         val dir = File(context.filesDir, "downloads").apply { mkdirs() }
         val part = File(dir, "$fileId.part")
 
@@ -329,10 +392,19 @@ class DownloadService(
         }
     }
 
+    private fun isCachePresent(cachePath: String?): Boolean {
+        if (cachePath == null) return false
+        return if (cachePath.startsWith("content:")) {
+            SafeDownloads.exists(context, android.net.Uri.parse(cachePath))
+        } else {
+            File(cachePath).exists()
+        }
+    }
+
     /** cached 但文件丢失 → 回到 remote。 */
     suspend fun ensureCacheConsistency(fileId: String) {
         val file = db.fileDao().getById(fileId) ?: return
-        if (file.state == FileStates.CACHED && (file.cachePath == null || !File(file.cachePath).exists())) {
+        if (file.state == FileStates.CACHED && !isCachePresent(file.cachePath)) {
             db.fileDao().setState(fileId, FileStates.REMOTE)
         }
     }

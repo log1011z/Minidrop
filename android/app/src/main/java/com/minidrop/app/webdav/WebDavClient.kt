@@ -278,6 +278,30 @@ class WebDavClient(
             result to sha
         }
 
+    /** 流式下载到调用方提供的输出流（SAF 文档），按块回调以便计算哈希。 */
+    suspend fun getToStream(relativePath: String, destination: java.io.OutputStream, onChunk: (ByteArray) -> Unit): DavResult =
+        gate.run("GetFile", false) {
+            try {
+                val req = Request.Builder().url(absoluteUri(relativePath)).get().build()
+                http.newCall(req).execute().use { resp ->
+                    val classified = classify(resp)
+                    if (!classified.ok) return@run classified
+                    resp.body?.byteStream()?.use { input ->
+                        val buf = ByteArray(64 * 1024)
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n <= 0) break
+                            destination.write(buf, 0, n)
+                            onChunk(buf.copyOf(n))
+                        }
+                    }
+                    classified
+                }
+            } catch (e: Exception) {
+                fromException(e)
+            }
+        }
+
     suspend fun delete(relativePath: String): DavResult = gate.run("Delete", false) {
         try {
             val req = Request.Builder().url(absoluteUri(relativePath)).delete().build()
