@@ -297,6 +297,8 @@ class WebDavClient(
                     }
                     classified
                 }
+            } catch (e: com.minidrop.app.core.DownloadSizeExceeded) {
+                throw e
             } catch (e: Exception) {
                 fromException(e)
             }

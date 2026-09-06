@@ -280,6 +280,9 @@ class DeleteService(
     }
 }
 
+/** 实时字节上限触发：下载字节数超过消息声明的文件大小。 */
+class DownloadSizeExceeded : Exception("total > declared size")
+
 /** 文件下载与打开（§8）：用户动作触发；.part + SHA-256 校验 + 原子改名。 */
 class DownloadService(
     private val context: Context,
@@ -310,46 +313,58 @@ class DownloadService(
 
     private suspend fun downloadToSaf(fileId: String, file: com.minidrop.app.data.db.FileEntity, treeUri: android.net.Uri): Result {
         db.fileDao().setState(fileId, FileStates.DOWNLOADING)
+        SafeDownloads.cleanupStaleParts(context, treeUri)
         var documentUri: android.net.Uri? = null
+        val mime = file.mime?.takeIf { it != "application/octet-stream" }
+            ?: com.minidrop.app.core.MimeTypes.fromName(file.name)
+            ?: "application/octet-stream"
         return try {
-            val target = SafeDownloads.ensureDocument(
-                context, treeUri, file.name,
-                file.mime?.takeIf { it != "application/octet-stream" }
-                    ?: com.minidrop.app.core.MimeTypes.fromName(file.name)
-                    ?: "application/octet-stream",
+            // 1) 先建临时文档（.minidrop-part）：校验通过前不以最终名示人，崩溃残留也不像完整文件
+            val tempUri = SafeDownloads.createDocument(
+                context, treeUri, file.name + ".minidrop-part", mime,
             ) ?: run {
                 db.fileDao().setState(fileId, FileStates.FAILED)
                 return Result.Fail("下载目录不可用，请到设置中重新选择")
             }
-            documentUri = target
+            documentUri = tempUri
 
-            val sink = context.contentResolver.openOutputStream(target, "w")
+            // 2) 流式写入 + 边下边算 SHA-256 + 实时字节上限
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            var total = 0L
+            val sink = context.contentResolver.openOutputStream(tempUri, "w")
                 ?: run {
+                    SafeDownloads.delete(context, tempUri)
                     db.fileDao().setState(fileId, FileStates.FAILED)
                     return Result.Fail("下载目录不可用，请到设置中重新选择")
                 }
-
-            val digest = java.security.MessageDigest.getInstance("SHA-256")
-            var total = 0L
             val result = sink.use { out ->
                 dav().getToStream(RemotePaths.filePath(fileId), out) { chunk ->
                     digest.update(chunk)
                     total += chunk.size
+                    if (total > file.size) throw com.minidrop.app.core.DownloadSizeExceeded()
                 }
             }
             if (!result.ok) {
-                SafeDownloads.delete(context, target)
+                SafeDownloads.delete(context, tempUri)
                 db.fileDao().setState(fileId, FileStates.FAILED)
                 return Result.Fail("下载失败，请重试")
             }
+
+            // 3) 校验大小与 SHA-256，全部通过才改为最终名称
             val sha = digest.digest().joinToString("") { "%02x".format(it) }
             if (total != file.size || (file.sha256 != null && file.sha256 != sha)) {
-                SafeDownloads.delete(context, target)
+                SafeDownloads.delete(context, tempUri)
                 db.fileDao().setState(fileId, FileStates.FAILED)
                 return Result.Fail("文件校验失败，请重试")
             }
-            db.fileDao().setCachePath(fileId, target.toString(), FileStates.CACHED)
-            Result.Ok(target.toString())
+            val finalUri = SafeDownloads.renameDocument(context, tempUri, file.name)
+            documentUri = finalUri
+            db.fileDao().setCachePath(fileId, finalUri.toString(), FileStates.CACHED)
+            Result.Ok(finalUri.toString())
+        } catch (_: com.minidrop.app.core.DownloadSizeExceeded) {
+            documentUri?.let { SafeDownloads.delete(context, it) }
+            db.fileDao().setState(fileId, FileStates.FAILED)
+            Result.Fail("文件超过预期大小")
         } catch (_: kotlinx.coroutines.CancellationException) {
             documentUri?.let { SafeDownloads.delete(context, it) }
             db.fileDao().setState(fileId, FileStates.REMOTE)

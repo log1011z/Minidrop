@@ -25,33 +25,53 @@ object SafeDownloads {
         }
     }
 
-    /** 在目标目录里按显示名定位文档；不存在则创建。失败返回 null。 */
-    fun ensureDocument(context: Context, treeUri: Uri, displayName: String, mime: String): Uri? = try {
+    /** 每次下载都创建新文档；同名时由系统追加 " (1)"，绝不覆盖用户已有文件。失败返回 null。 */
+    fun createDocument(context: Context, treeUri: Uri, displayName: String, mime: String): Uri? = try {
         val treeDoc = DocumentsContract.buildDocumentUriUsingTree(
             treeUri, DocumentsContract.getTreeDocumentId(treeUri),
         )
-        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
-            treeUri, DocumentsContract.getTreeDocumentId(treeUri),
-        )
-
-        // 同名文档复用（createDocument 遇同名会追加 " (1)"）
-        var existing: Uri? = null
-        context.contentResolver.query(
-            childrenUri,
-            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME),
-            null, null, null,
-        )?.use { cursor ->
-            while (cursor.moveToNext()) {
-                if (cursor.getString(1) == displayName) {
-                    existing = DocumentsContract.buildDocumentUriUsingTree(treeUri, cursor.getString(0))
-                    break
-                }
-            }
-        }
-
-        existing ?: DocumentsContract.createDocument(context.contentResolver, treeDoc, mime, displayName)
+        DocumentsContract.createDocument(context.contentResolver, treeDoc, mime, displayName)
     } catch (_: Exception) {
         null
+    }
+
+    /** 重命名文档；提供方不支持时保留原名（内容已校验，不影响使用）。 */
+    fun renameDocument(context: Context, uri: Uri, newName: String): Uri = try {
+        DocumentsContract.renameDocument(context.contentResolver, uri, newName)
+            ?: uri // 某些提供方返回 null 表示名称未变
+    } catch (_: Exception) {
+        uri
+    }
+
+    /** 清理崩溃残留的 *.minidrop-part 临时文档（超过 maxAgeMs 才删，避免误删进行中的下载）。 */
+    fun cleanupStaleParts(context: Context, treeUri: Uri, maxAgeMs: Long = 48L * 3600 * 1000) {
+        try {
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+                treeUri, DocumentsContract.getTreeDocumentId(treeUri),
+            )
+            val cutoff = System.currentTimeMillis() - maxAgeMs
+            val stale = mutableListOf<Uri>()
+            context.contentResolver.query(
+                childrenUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+                ),
+                null, null, null,
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(1) ?: continue
+                    if (!name.endsWith(".minidrop-part")) continue
+                    val modified = if (cursor.isNull(2)) 0L else cursor.getLong(2)
+                    if (modified in 1 until cutoff) {
+                        stale.add(DocumentsContract.buildDocumentUriUsingTree(treeUri, cursor.getString(0)))
+                    }
+                }
+            }
+            stale.forEach { delete(context, it) }
+        } catch (_: Exception) {
+        }
     }
 
     fun exists(context: Context, documentUri: Uri): Boolean = try {

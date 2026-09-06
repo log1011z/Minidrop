@@ -10,3 +10,6 @@ object MimeTypes {
         return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
     }
 }
+
+/** 下载字节数超过消息声明的文件大小时抛出（SAF 实时字节上限）。 */
+class DownloadSizeExceeded : Exception("total > declared size")
