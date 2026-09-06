@@ -240,7 +240,6 @@ public sealed class FakeWebDavServer : IDisposable
     {
         var bytes = buffer.GetBuffer();
         var len = (int)buffer.Length;
-        const string sep = "\r\n\r\n";
         if (len < 4) return -1;
         for (var i = 0; i <= len - 4; i++)
         {

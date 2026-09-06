@@ -83,7 +83,7 @@ public partial class App : Application
         // 启动恢复与本地清理（零网络）
         var mutex = new SyncMutex();
         var transfers = new TransferRegistry();
-        var recovery = new StartupRecovery(Db, OptionsFactory, Log);
+        var recovery = new StartupRecovery(Db, OptionsFactory);
         recovery.Recover();
         recovery.LocalCleanup(DateTimeOffset.UtcNow);
 
@@ -95,7 +95,7 @@ public partial class App : Application
             PasswordProvider = CredentialManager.Load,
         }, Gate);
 
-        _pump = new UploadPump(Db, DavFactory, OptionsFactory, transfers, Log);
+        _pump = new UploadPump(Db, DavFactory, transfers, Log);
         _pump.StartBackgroundLoop(((App)Current).GetAppCts().Token);
 
         var sync = new SyncCoordinator(Db, DavFactory, OptionsFactory, mutex, Log);

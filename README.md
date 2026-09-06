@@ -50,7 +50,7 @@ Windows (WPF)                         Android (Compose)
 ```powershell
 cd windows
 dotnet build MiniDrop.slnx
-dotnet test tests/MiniDrop.Tests/MiniDrop.Tests.csproj    # 91 个单元测试
+dotnet test tests/MiniDrop.Tests/MiniDrop.Tests.csproj    # 93 个单元测试
 
 # 依赖框架版（约 3.4 MB，需安装 .NET Desktop Runtime 10）
 dotnet publish src/MiniDrop.Windows/MiniDrop.Windows.csproj `

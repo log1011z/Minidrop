@@ -41,14 +41,14 @@ public sealed class AppHarness : IDisposable
         });
 
         var mutex = new SyncMutex();
-        Pump = new UploadPump(Db, dav, () => Options, Transfers, Log);
+        Pump = new UploadPump(Db, dav, Transfers, Log);
         Send = new SendService(Db, () => Options, Pump, Log);
         Sync = new SyncCoordinator(Db, dav, () => Options, mutex, Log);
         Maintenance = new MaintenanceService(Db, dav, () => Options, mutex, Sync, Log);
         Sync.Maintenance = Maintenance;
         Delete = new DeleteService(Db, dav, () => Options, Sync, Transfers, Log);
         Download = new DownloadService(Db, dav, () => Options, Transfers, Log);
-        Recovery = new StartupRecovery(Db, () => Options, Log);
+        Recovery = new StartupRecovery(Db, () => Options);
 
         // 远端根目录
         Server.MkCol("/MiniDrop/");

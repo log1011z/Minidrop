@@ -146,10 +146,10 @@ public sealed class WebDavClient : IDisposable
             using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
             var classified = Classify(resp, expectBody: true);
             if (!classified.Ok)
-                return (classified, null);
+                return (classified, (byte[]?)null);
             var length = resp.Content.Headers.ContentLength;
             if (length.HasValue && length.Value > maxBytes)
-                return (DavResult.NewOk((int)resp.StatusCode), null); // 超限：结果为 Ok 但内容 null，由调用方判 TOO_LARGE
+                return (DavResult.NewOk((int)resp.StatusCode), (byte[]?)null); // 超限：结果为 Ok 但内容 null，由调用方判 TOO_LARGE
 
             var buffer = new MemoryStream();
             await using (var stream = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false))
@@ -161,18 +161,18 @@ public sealed class WebDavClient : IDisposable
                 {
                     total += n;
                     if (total > maxBytes)
-                        return (DavResult.NewOk((int)resp.StatusCode), null);
+                        return (DavResult.NewOk((int)resp.StatusCode), (byte[]?)null);
                     buffer.Write(chunk, 0, n);
                 }
             }
             return (DavResult.NewOk((int)resp.StatusCode), buffer.ToArray());
         }
-        catch (Exception e) { return (FromException(e), null); }
+        catch (Exception e) { return (FromException(e), (byte[]?)null); }
     }).ConfigureAwait(false);
 
-    /// <summary>流式下载到目标流（下载 .part 用），带进度与取消。</summary>
+    /// <summary>流式下载到目标流（下载 .part 用），带实时字节上限、进度与取消。</summary>
     public async Task<DavResult> GetStreamAsync(string relativePath, Stream destination,
-        IProgress<long>? progress, CancellationToken ct) => await Gate.RunAsync(RequestKind.GetFile, async () =>
+        long maxBytes, IProgress<long>? progress, CancellationToken ct) => await Gate.RunAsync(RequestKind.GetFile, async () =>
     {
         try
         {
@@ -182,6 +182,8 @@ public sealed class WebDavClient : IDisposable
             var classified = Classify(resp, expectBody: true);
             if (!classified.Ok)
                 return classified;
+            if (maxBytes < 0 || resp.Content.Headers.ContentLength is { } contentLength && contentLength > maxBytes)
+                return new DavResult(DavStatus.ProtocolError, (int)resp.StatusCode, Detail: "response exceeds size limit");
 
             await using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
             var chunk = new byte[64 * 1024];
@@ -189,6 +191,8 @@ public sealed class WebDavClient : IDisposable
             int n;
             while ((n = await stream.ReadAsync(chunk, ct).ConfigureAwait(false)) > 0)
             {
+                if (n > maxBytes - total)
+                    return new DavResult(DavStatus.ProtocolError, (int)resp.StatusCode, Detail: "response exceeds size limit");
                 await destination.WriteAsync(chunk.AsMemory(0, n), ct).ConfigureAwait(false);
                 total += n;
                 progress?.Report(total);

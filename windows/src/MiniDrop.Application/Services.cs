@@ -268,7 +268,8 @@ public sealed class DownloadService(
         {
             _files.SetState(fileId, FileStates.Downloading);
             await using var part = File.Create(partPath);
-            var result = await dav().GetStreamAsync(RemotePaths.FilePath(file.FileId), part, null, linked.Token).ConfigureAwait(false);
+            var result = await dav().GetStreamAsync(
+                RemotePaths.FilePath(file.FileId), part, file.Size, null, linked.Token).ConfigureAwait(false);
             await part.FlushAsync(linked.Token).ConfigureAwait(false);
             part.Close();
 
@@ -298,8 +299,7 @@ public sealed class DownloadService(
                 }
             }
 
-            var finalPath = Path.Combine(dir, BuildCacheName(file.FileId, file.Name));
-            File.Move(partPath, finalPath, overwrite: false);
+            var finalPath = MovePartToUniquePath(partPath, dir, file.Name);
             _files.SetCachePath(fileId, finalPath, FileStates.Cached);
             log.Info("download", "cached");
             return (DownloadStep.Completed, null);
@@ -323,19 +323,85 @@ public sealed class DownloadService(
     }
 
     /// <summary>cached 但文件丢失 → 回到 remote。</summary>
-    public void EnsureCacheConsistency(FileRow file)
+    public bool EnsureCacheConsistency(FileRow file)
     {
         if (file.State == FileStates.Cached && (file.CachePath is null || !File.Exists(file.CachePath)))
+        {
             _files.SetState(file.FileId, FileStates.Remote);
+            return true;
+        }
+        return false;
     }
 
-    /// <summary>缓存名：&lt;uuid&gt;_&lt;安全扩展名&gt;；展示名始终来自数据库 name。</summary>
-    public static string BuildCacheName(string fileId, string displayName)
+    /// <summary>尽量保留原始文件名，同时处理 Windows 非法字符、保留设备名和长度限制。</summary>
+    public static string BuildCacheName(string displayName)
     {
-        var ext = Path.GetExtension(displayName);
-        var safe = ext.Length is > 0 and <= 11 && ext[1..].All(c => char.IsAsciiLetterOrDigit(c)) ? ext : ".bin";
-        return fileId + "_" + safe;
+        var invalid = Path.GetInvalidFileNameChars();
+        var safe = new string(displayName.Select(c => invalid.Contains(c) || char.IsControl(c) ? '_' : c).ToArray())
+            .TrimEnd(' ', '.');
+        if (string.IsNullOrWhiteSpace(safe) || safe is "." or "..")
+            safe = "file";
+
+        var deviceName = safe.Split('.', 2)[0];
+        if (ReservedDeviceNames.Contains(deviceName))
+            safe = "_" + safe;
+
+        const int maxNameChars = 180;
+        if (safe.Length > maxNameChars)
+        {
+            var ext = Path.GetExtension(safe);
+            if (ext.Length is > 0 and < maxNameChars)
+            {
+                var stemLength = maxNameChars - ext.Length;
+                safe = safe[..stemLength].TrimEnd(' ', '.') + ext;
+            }
+            else
+            {
+                safe = safe[..maxNameChars].TrimEnd(' ', '.');
+            }
+        }
+        return safe.Length == 0 ? "file" : safe;
     }
+
+    private static string MovePartToUniquePath(string partPath, string dir, string displayName)
+    {
+        var safeName = BuildCacheName(displayName);
+        for (var index = 0; index < 10_000; index++)
+        {
+            var candidateName = index == 0 ? safeName : AddCollisionSuffix(safeName, index);
+            var candidatePath = Path.Combine(dir, candidateName);
+            try
+            {
+                // File.Move 是原子的；若并发下载抢到同名，捕获冲突后尝试下一个序号。
+                File.Move(partPath, candidatePath, overwrite: false);
+                return candidatePath;
+            }
+            catch (IOException) when (File.Exists(candidatePath))
+            {
+                // 保留已有文件，继续尝试 "name (n).ext"。
+            }
+        }
+        throw new IOException("无法为下载文件分配唯一名称");
+    }
+
+    private static string AddCollisionSuffix(string safeName, int index)
+    {
+        const int maxNameChars = 180;
+        var ext = Path.GetExtension(safeName);
+        var stem = safeName[..^ext.Length];
+        var suffix = $" ({index})";
+        var maxStemLength = Math.Max(1, maxNameChars - ext.Length - suffix.Length);
+        if (stem.Length > maxStemLength)
+            stem = stem[..maxStemLength].TrimEnd(' ', '.');
+        return stem + suffix + ext;
+    }
+
+    private static readonly HashSet<string> ReservedDeviceNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CON", "PRN", "AUX", "NUL", "CLOCK$",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    };
 
     private static void Cleanup(string partPath)
     {
@@ -350,7 +416,7 @@ public sealed class DownloadService(
 }
 
 /// <summary>启动恢复与本地清理（§4.3 末、§12.1）：零网络。</summary>
-public sealed class StartupRecovery(Database db, Func<AppOptions> options, IDiagLog log)
+public sealed class StartupRecovery(Database db, Func<AppOptions> options)
 {
     private readonly JobDao _jobs = new(db);
     private readonly FileDao _files = new(db);

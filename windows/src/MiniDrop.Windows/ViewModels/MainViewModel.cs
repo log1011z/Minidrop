@@ -335,8 +335,10 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    public async Task RetryAsync(string messageId)
+    public async Task RetryAsync(string? messageId)
     {
+        if (string.IsNullOrEmpty(messageId))
+            return;
         if (_jobs.Requeue(messageId))
         {
             Services.Pump.Wake();
@@ -345,8 +347,10 @@ public partial class MainViewModel : ObservableObject
         await Task.CompletedTask;
     }
 
-    public async Task DeleteAsync(string messageId)
+    public async Task DeleteAsync(string? messageId)
     {
+        if (string.IsNullOrEmpty(messageId))
+            return;
         // 未发布的消息只删本机（无需网络/配置）；已发布的要走全端删除协议
         var unpublished = _jobs.Get(messageId) is not null;
         var text = unpublished
@@ -394,6 +398,13 @@ public partial class MainViewModel : ObservableObject
         var row = _files.Get(file.FileId);
         if (row is null)
             return;
+        if (Services.Download.EnsureCacheConsistency(row))
+        {
+            row = _files.Get(file.FileId);
+            if (row is null)
+                return;
+            file.RefreshState(row);
+        }
         if (row.State == FileStates.Cached)
         {
             FileOpen(file);
@@ -422,7 +433,17 @@ public partial class MainViewModel : ObservableObject
     private void FileOpen(FileItemViewModel file)
     {
         var row = _files.Get(file.FileId);
-        if (row?.CachePath is null || !File.Exists(row.CachePath))
+        if (row is null)
+            return;
+        if (Services.Download.EnsureCacheConsistency(row))
+        {
+            var fresh = _files.Get(file.FileId);
+            if (fresh is not null)
+                file.RefreshState(fresh);
+            StatusText = "本地文件已删除，请重新下载";
+            return;
+        }
+        if (row.CachePath is null)
             return;
         try
         {
@@ -482,7 +503,11 @@ public partial class MainViewModel : ObservableObject
             {
                 var row = _files.Get(f.FileId);
                 if (row is not null)
+                {
+                    if (Services.Download.EnsureCacheConsistency(row))
+                        row = _files.Get(f.FileId) ?? row;
                     fvm_Poll(f, row);
+                }
             }
         }
     }

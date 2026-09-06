@@ -41,7 +41,7 @@ public sealed class MetaDao(Database db)
 
 public sealed class MessageDao(Database db)
 {
-    public void Insert(SqliteTransaction tx, MessageRow m)
+    public void Insert(SqliteTransaction? tx, MessageRow m)
     {
         using var cmd = db.Connection.Cmd(tx,
             """
@@ -74,7 +74,7 @@ public sealed class MessageDao(Database db)
         return cmd.ExecuteScalar() is not null;
     }
 
-    public void Delete(SqliteTransaction tx, string id)
+    public void Delete(SqliteTransaction? tx, string id)
     {
         using var cmd = db.Connection.Cmd(tx, "DELETE FROM messages WHERE id = $id");
         cmd.Set("$id", id);
@@ -102,7 +102,7 @@ public sealed class MessageDao(Database db)
             var m = Read(r);
             JobRow? job = r.IsDBNull(8) ? null : new JobRow(
                 m.Id, StateStrings.ToJobState(r.GetString(8)), r.GetInt32(9), r.Int64OrNull(10),
-                r.GetInt64(11), r.GetInt64(12), r.Str(13), r.Str(14), r.Str(15), r.Str(16));
+                r.GetInt64(11), r.GetInt64(12), r.Str(13), r.Str(14), r.GetString(15), r.GetString(16));
             list.Add(new TimelineRow(m, job));
         }
         return list;
@@ -148,7 +148,7 @@ public sealed class MessageDao(Database db)
     }
 
     /// <summary>事务内删除消息；files/jobs 级联。</summary>
-    public void DeleteCascade(SqliteTransaction tx, string id) => Delete(tx, id);
+    public void DeleteCascade(SqliteTransaction? tx, string id) => Delete(tx, id);
 
     private static MessageRow Read(SqliteDataReader r) => new(
         r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3),
@@ -157,7 +157,7 @@ public sealed class MessageDao(Database db)
 
 public sealed class FileDao(Database db)
 {
-    public void Insert(SqliteTransaction tx, FileRow f)
+    public void Insert(SqliteTransaction? tx, FileRow f)
     {
         using var cmd = db.Connection.Cmd(tx,
             """
@@ -247,7 +247,7 @@ public sealed class FileDao(Database db)
 
 public sealed class JobDao(Database db)
 {
-    public void Insert(SqliteTransaction tx, JobRow j)
+    public void Insert(SqliteTransaction? tx, JobRow j)
     {
         using var cmd = db.Connection.Cmd(tx,
             """

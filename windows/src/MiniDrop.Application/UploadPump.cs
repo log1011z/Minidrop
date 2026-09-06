@@ -12,7 +12,6 @@ namespace MiniDrop.Application;
 public sealed class UploadPump(
     Database db,
     Func<WebDavClient> dav,
-    Func<AppOptions> options,
     TransferRegistry transfers,
     IDiagLog log) : IUploadTrigger
 {
