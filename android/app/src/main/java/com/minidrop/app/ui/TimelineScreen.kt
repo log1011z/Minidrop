@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
@@ -116,19 +118,25 @@ fun TimelineScreen(
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Row(verticalAlignment = Alignment.Bottom) {
-                            IconButton(onClick = { pickFiles.launch(arrayOf("*/*")) }) {
-                                Icon(Icons.Filled.Add, contentDescription = "添加文件",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { pickFiles.launch(arrayOf("*/*")) },
+                                modifier = Modifier.size(38.dp),
+                            ) {
+                                Icon(
+                                    Icons.Filled.Add,
+                                    contentDescription = "添加文件",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                             BasicTextField(
                                 value = state.input,
                                 onValueChange = vm::onInputChange,
                                 modifier = Modifier
                                     .weight(1f)
-                                    .padding(top = 8.dp, bottom = 8.dp)
-                                    .heightIn(min = 22.dp)
-                                    .heightIn(max = if (expanded) 220.dp else 96.dp)
+                                    .padding(vertical = 8.dp)
+                                    .heightIn(min = 20.dp)
+                                    .heightIn(max = if (expanded) 220.dp else 80.dp)
                                     .verticalScroll(rememberScrollState()),
                                 textStyle = LocalTextStyle.current.copy(fontSize = 15.sp),
                                 maxLines = if (expanded) 12 else 4,
@@ -142,13 +150,17 @@ fun TimelineScreen(
                                                     fontSize = 15.sp,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 ),
+                                                maxLines = 1,
                                             )
                                         }
                                         inner()
                                     }
                                 },
                             )
-                            IconButton(onClick = { expanded = !expanded }) {
+                            IconButton(
+                                onClick = { expanded = !expanded },
+                                modifier = Modifier.size(38.dp),
+                            ) {
                                 Icon(
                                     if (expanded) Icons.Filled.CloseFullscreen else Icons.Filled.OpenInFull,
                                     contentDescription = if (expanded) "收起输入框" else "放大输入框",
@@ -162,7 +174,9 @@ fun TimelineScreen(
                         onClick = { vm.sendInput() },
                         enabled = !state.busy && state.input.isNotBlank(),
                         modifier = Modifier
-                            .padding(start = 8.dp, bottom = 2.dp),
+                            .padding(start = 8.dp)
+                            .height(40.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp),
                     ) {
                         Text(stringResourceCompat(context, R.string.send))
                     }

@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
@@ -38,8 +39,11 @@ class TimelineViewModel(app: Application) : AndroidViewModel(app) {
     private val timelineFlow = ctx.db.messageDao().timelineFlow(500)
     private val filesFlow = ctx.db.fileDao().allFiles()
 
+    // 配置状态实时订阅：设置页保存后回到时间线立即生效
+    private val configuredFlow = ctx.settings.settings.map { it.isConfigured }
+
     val uiState: StateFlow<TimelineUiState> = combine(
-        timelineFlow, filesFlow, input, busy, combine(status, configured, canLoadOlder) { s, c, l -> Triple(s, c, l) },
+        timelineFlow, filesFlow, input, busy, combine(status, configuredFlow, canLoadOlder) { s, c, l -> Triple(s, c, l) },
     ) { timeline, files, inputText, isBusy, (statusText, isConfigured, loadOlder) ->
         TimelineUiState(
             timeline = timeline,
@@ -52,11 +56,6 @@ class TimelineViewModel(app: Application) : AndroidViewModel(app) {
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TimelineUiState())
 
-    init {
-        viewModelScope.launch {
-            configured.value = ctx.settings.current().isConfigured
-        }
-    }
 
     fun onInputChange(value: String) {
         input.value = value
