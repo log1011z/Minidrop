@@ -14,9 +14,9 @@
         Drop="Window_Drop">
 
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="40"
+        <!-- CaptionHeight=0：标题栏拖拽用 DragMove 自行处理，按钮点击不经过 chrome 命中测试 -->
+        <shell:WindowChrome CaptionHeight="0"
                             ResizeBorderThickness="6"
-                            CornerRadius="8"
                             GlassFrameThickness="0"
                             UseAeroCaptionButtons="False" />
     </shell:WindowChrome.WindowChrome>
@@ -108,14 +108,21 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <!-- 自定义标题栏 -->
-            <Border Grid.Row="0" Background="{StaticResource WindowBackground}" Padding="12,0">
+            <!-- 自定义标题栏：MouseLeftButtonDown 拖拽，双击最大化 -->
+            <Border Grid.Row="0" Background="{StaticResource WindowBackground}" Padding="12,0"
+                    MouseLeftButtonDown="TitleBar_MouseLeftButtonDown"
+                    MouseLeftButtonUp="TitleBar_MouseLeftButtonUp"
+                   >
                 <DockPanel Height="40" LastChildFill="True">
                     <Image DockPanel.Dock="Left" Source="pack://application:,,,/app.ico" Width="16" Height="16"
                            RenderOptions.BitmapScalingMode="HighQuality" Margin="0,0,8,0" />
                     <TextBlock DockPanel.Dock="Left" Text="MiniDrop" FontWeight="SemiBold" FontSize="13"
                                VerticalAlignment="Center" Foreground="#1B1B1B" />
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button Style="{StaticResource CaptionButton}" Content="&#xE72C;" Click="RefreshTitleButton_Click"
+                                ToolTip="刷新 (F5)" />
+                        <Button Style="{StaticResource CaptionButton}" Content="&#xE713;" Click="SettingsTitleButton_Click"
+                                ToolTip="设置" />
                         <Button Style="{StaticResource CaptionButton}" Content="&#xE921;" Click="MinimizeButton_Click" />
                         <Button Style="{StaticResource CaptionButton}" x:Name="MaxRestoreButton" Content="&#xE922;" Click="MaximizeButton_Click" />
                         <Button Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;" Click="CloseButton_Click" />

@@ -56,6 +56,42 @@ public partial class MainWindow : Window
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => TryHideToTray();
 
+    private void RefreshTitleButton_Click(object sender, RoutedEventArgs e) =>
+        _ = _vm.RefreshAsyncCommand.ExecuteAsync(null);
+
+    private void SettingsTitleButton_Click(object sender, RoutedEventArgs e) => App.ShowSettings();
+
+    // ---------- 标题栏拖拽（CaptionHeight=0，按钮点击不经 chrome 命中测试） ----------
+
+    private bool _dragStarted;
+
+    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount == 2)
+        {
+            MaximizeButton_Click(sender, e);
+            return;
+        }
+        if (e.ButtonState == MouseButtonState.Pressed)
+        {
+            _dragStarted = true;
+            try { DragMove(); } catch (InvalidOperationException) { }
+        }
+    }
+
+    private void TitleBar_MouseLeftButtonUp(object sender, MouseButtonEventArgs e) => _dragStarted = false;
+
+    private void TitleBar_MouseMove(object sender, MouseEventArgs e)
+    {
+        // DragMove 本身即拖拽；此处仅处理最大化状态下按住标题恢复窗口的拖动
+        if (_dragStarted && WindowState == WindowState.Maximized && e.LeftButton == MouseButtonState.Pressed)
+        {
+            _dragStarted = false;
+            WindowState = WindowState.Normal;
+            try { DragMove(); } catch (InvalidOperationException) { }
+        }
+    }
+
     /// <summary>关闭/隐藏到托盘：首次给出气泡提示（§9.4）。</summary>
     private void TryHideToTray()
     {

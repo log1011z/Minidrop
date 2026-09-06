@@ -8,27 +8,33 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent">
 
     <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="36"
-                            ResizeBorderThickness="0"
-                            CornerRadius="8"
+        <!-- CaptionHeight=0：拖拽用 DragMove 自行处理，按钮点击不经过 chrome 命中测试 -->
+        <shell:WindowChrome CaptionHeight="0"
                             GlassFrameThickness="0"
                             UseAeroCaptionButtons="False" />
     </shell:WindowChrome.WindowChrome>
 
     <Border x:Name="RootBorder" Background="{StaticResource WindowBackground}" CornerRadius="8"
             BorderBrush="#D9D9D9" BorderThickness="1">
-        <StackPanel Margin="18,0,18,16">
-            <!-- 标题栏 -->
-            <DockPanel Height="36" LastChildFill="True">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- 标题栏：独立于内容边距，X 按钮不与圆角/负边距重叠 -->
+            <DockPanel Grid.Row="0" Height="36" LastChildFill="True" Margin="10,3,2,0"
+                       MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                 <TextBlock Text="设置" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="#1B1B1B" />
                 <Button DockPanel.Dock="Right"
                         Style="{StaticResource CloseCaptionButton}" Content="&#xE8BB;"
                         Click="CloseTitleButton_Click"
-                        Width="40" Height="30" Margin="0,0,-18,0" />
+                        Width="40" Height="30" />
                 <Border Background="Transparent" />
             </DockPanel>
 
-            <TextBlock Text="WebDAV 连接" FontSize="14" FontWeight="SemiBold" Margin="0,4,0,6" />
+            <StackPanel Grid.Row="1" Margin="18,0,18,16">
+                <TextBlock Text="WebDAV 连接" FontSize="14" FontWeight="SemiBold" Margin="0,4,0,6" />
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="110" />
@@ -96,5 +102,6 @@
             <TextBlock Text="{Binding TestResult}" Margin="0,12,0,0" TextWrapping="Wrap"
                        Foreground="{StaticResource AccentBrush}" />
         </StackPanel>
+        </Grid>
     </Border>
 </Window>
