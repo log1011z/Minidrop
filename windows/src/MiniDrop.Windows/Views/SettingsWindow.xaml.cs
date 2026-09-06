@@ -35,7 +35,6 @@ public partial class SettingsWindow : Window
     private async void TestConnection_Click(object sender, RoutedEventArgs e)
     {
         await _vm.TestConnectionAsync(PasswordBox.Password);
-        _vm.RefreshRequestUsage();
     }
 
     private async void Save_Click(object sender, RoutedEventArgs e)
@@ -56,7 +55,6 @@ public partial class SettingsWindow : Window
         }
         finally
         {
-            _vm.RefreshRequestUsage();
             EnableButtons();
         }
     }
@@ -112,7 +110,6 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _notifyOnSendSuccess = true;
     [ObservableProperty] private string _testResult = "";
     [ObservableProperty] private string _maintenanceInfo = "";
-    [ObservableProperty] private string _requestUsage = "";
 
     public string? LoadedPassword { get; private set; }
 
@@ -134,17 +131,6 @@ public partial class SettingsViewModel : ObservableObject
         _originalRootUrl = s.RootUrl;
         _originalPassword = LoadedPassword ?? "";
         RefreshMaintenanceInfo();
-        RefreshRequestUsage();
-    }
-
-    /// <summary>本会话对坚果云的请求统计（§3.6）。</summary>
-    public void RefreshRequestUsage()
-    {
-        var counts = App.Gate.SnapshotCounts();
-        RequestUsage = counts.Count == 0
-            ? "本次运行尚未发出 WebDAV 请求"
-            : "本次运行请求统计：" + string.Join("，",
-                counts.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key} {kv.Value} 次"));
     }
 
     public void RefreshMaintenanceInfo()

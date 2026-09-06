@@ -101,8 +101,6 @@
 
             <TextBlock Text="{Binding TestResult}" Margin="0,12,0,0" TextWrapping="Wrap"
                        Foreground="{StaticResource AccentBrush}" />
-            <TextBlock Text="{Binding RequestUsage}" Margin="0,8,0,0" TextWrapping="Wrap"
-                       Foreground="{StaticResource MutedBrush}" FontSize="12" />
         </StackPanel>
         </Grid>
     </Border>
