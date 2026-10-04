@@ -14,6 +14,7 @@ import com.minidrop.app.sync.UploadPump
 import com.minidrop.app.sync.UploadPumpWorker
 import com.minidrop.app.webdav.WebDavClient
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CompletableDeferred
 
 /** 组合根：全局唯一数据库 / WebDAV 工厂 / 各服务。 */
 class MiniDropApp : Application() {
@@ -36,6 +37,9 @@ class MiniDropApp : Application() {
         private set
 
     private lateinit var recovery: StartupRecovery
+    private val ready = CompletableDeferred<Unit>()
+
+    suspend fun awaitReady() = ready.await()
 
     /** 设置与密码的内存快照：WebDAV 工厂在非挂起上下文中读取。 */
     @Volatile
@@ -82,21 +86,27 @@ class MiniDropApp : Application() {
             deviceId = { settings.current().deviceId },
             deviceName = { settings.current().deviceName },
             trigger = { UploadPumpWorker.enqueueNow(this) },
+            awaitReady = { awaitReady() },
         )
 
         // 设置流收集 + 凭据快照刷新
         appScope.launch {
             settings.settings.collect { settingsSnapshot = it }
         }
-        appScope.launch {
-            passwordSnapshot = settings.loadPassword()
-        }
-
         // 启动恢复与本地清理（零网络），随后唤醒 pump 消费遗留队列
         appScope.launch {
-            recovery.recover()
-            recovery.localCleanup()
-            UploadPumpWorker.enqueueNow(this@MiniDropApp)
+            try {
+                settings.ensureDeviceId()
+                settingsSnapshot = settings.current()
+                passwordSnapshot = settings.loadPassword()
+                recovery.recover()
+                recovery.localCleanup()
+                ready.complete(Unit)
+                UploadPumpWorker.enqueueNow(this@MiniDropApp)
+            } catch (e: Exception) {
+                ready.completeExceptionally(e)
+                throw e
+            }
         }
     }
 

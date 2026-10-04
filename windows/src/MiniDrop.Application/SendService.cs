@@ -25,7 +25,7 @@ public sealed class SendService(
         if (trimmed.Length == 0)
             return Task.FromResult(SendResult.Fail("内容为空"));
         if (System.Text.Encoding.UTF8.GetByteCount(text!) > Limits.MaxTextBytes)
-            return Task.FromResult(SendResult.Fail("文字太长（上限 100 KiB）"));
+            return Task.FromResult(SendResult.Fail("文字太长，请缩短后重试"));
 
         return EnqueueAsync(text!, []);
     }
@@ -36,6 +36,8 @@ public sealed class SendService(
             return Task.FromResult(SendResult.Fail("没有文件"));
         if (paths.Count > Limits.MaxFiles)
             return Task.FromResult(SendResult.Fail($"一次最多 {Limits.MaxFiles} 个文件"));
+        if (text is not null && System.Text.Encoding.UTF8.GetByteCount(text) > Limits.MaxTextBytes)
+            return Task.FromResult(SendResult.Fail("文字太长，请缩短后重试"));
 
         var maxBytes = options().MaxFileBytes;
         var infos = new List<(string Path, long Size, long MtimeMs)>(paths.Count);
@@ -44,6 +46,8 @@ public sealed class SendService(
             try
             {
                 var fi = new FileInfo(p);
+                if (!MessageJson.IsValidFileName(fi.Name))
+                    return Task.FromResult(SendResult.Fail("文件名不支持，请改名后重试"));
                 if (!fi.Exists)
                     return Task.FromResult(SendResult.Fail("文件不存在：" + p));
                 if (fi.Length > maxBytes)

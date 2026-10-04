@@ -33,6 +33,7 @@
 
         <activity
             android:name=".ui.ShareReceiverActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
             android:excludeFromRecents="true"
             android:exported="true"
             android:theme="@style/Theme.MiniDrop.Translucent">

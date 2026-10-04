@@ -217,6 +217,9 @@ interface FileDao {
 
     @Query("SELECT * FROM files")
     fun allFiles(): kotlinx.coroutines.flow.Flow<List<FileEntity>>
+
+    @Query("SELECT source_path FROM files WHERE source_path IS NOT NULL")
+    suspend fun referencedSourcePaths(): List<String>
 }
 
 @Dao
@@ -290,6 +293,13 @@ interface JobDao {
            WHERE message_id = :messageId AND state IN ('failed','retry_wait','uploading')""",
     )
     suspend fun requeue(messageId: String, now: String): Int
+
+    @Query(
+        """UPDATE upload_jobs SET state = 'queued', attempts = 0, next_attempt_at = NULL,
+           error_code = NULL, error_message = NULL, updated_at = :now
+           WHERE message_id = :messageId AND state IN ('failed','retry_wait')""",
+    )
+    suspend fun retryFromTimeline(messageId: String, now: String): Int
 
     @Query("UPDATE upload_jobs SET state = 'queued', updated_at = :now WHERE state = 'uploading'")
     suspend fun recoverUploading(now: String): Int

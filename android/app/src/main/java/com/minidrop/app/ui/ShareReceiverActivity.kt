@@ -1,9 +1,6 @@
 package com.minidrop.app.ui
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
-import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -27,11 +24,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import com.minidrop.app.MiniDropApp
 import com.minidrop.app.core.Limits
-import com.minidrop.app.sync.StagedFile
-import java.io.File
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import com.minidrop.app.sync.Staging
+import com.minidrop.app.sync.SendResult
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 
 /**
  * 分享接收（§10.3）：SEND / SEND_MULTIPLE。
@@ -50,23 +48,23 @@ class ShareReceiverActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val app = application as MiniDropApp
 
-        val text = when (intent?.action) {
-            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
-            else -> null
-        }
-        val uris: List<Uri> = when (intent?.action) {
-            Intent.ACTION_SEND_MULTIPLE -> intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty().filterNotNull()
-            Intent.ACTION_SEND -> listOfNotNull(intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri)
-            else -> emptyList()
-        }
+        val payload = SharePayload.from(intent)
+        val text = payload.text
+        val uris = payload.uris
 
         if (uris.isEmpty() && text.isNullOrBlank()) {
+            toast("分享内容为空或无法读取")
+            finish()
+            return
+        }
+        if (uris.size > Limits.MAX_FILES) {
+            toast("一次最多 ${Limits.MAX_FILES} 个文件")
             finish()
             return
         }
 
         setContent {
-            MaterialTheme {
+            MiniDropTheme {
                 Surface {
                     Column(
                         Modifier
@@ -112,101 +110,52 @@ class ShareReceiverActivity : ComponentActivity() {
         }
 
         lifecycleScope.launch {
-            val staged = ArrayList<StagedFile>()
+            var staged = emptyList<com.minidrop.app.sync.StagedFile>()
+            var enqueued = false
             try {
-                val stagingDir = File(app.filesDir, "staging").apply { mkdirs() }
-                val maxBytes = app.settingsSnapshot.maxFileBytes
-
-                for ((index, uri) in uris.withIndex()) {
-                    if (cancelled) return@launch
-                    progressText = "正在复制 ${index + 1}/${uris.size}…"
-                    progress = index.toFloat() / uris.size
-
-                    val displayName = queryDisplayName(uri) ?: "file-${index + 1}"
-                    val size = querySize(uri)
-                    if (size != null && size > maxBytes) {
-                        toast("单个文件不能超过 ${maxBytes / (1024 * 1024)} MB")
-                        cleanup(staged)
-                        finish()
-                        return@launch
+                app.awaitReady()
+                if (uris.isNotEmpty()) {
+                    when (val copied = Staging.copyAll(app, uris, app.settingsSnapshot.maxFileBytes,
+                        isCancelled = { cancelled },
+                    ) { index, total ->
+                        progressText = "正在复制 ${index + 1}/$total…"
+                        progress = index.toFloat() / total
+                    }) {
+                        is Staging.CopyResult.Ok -> staged = copied.files
+                        is Staging.CopyResult.TooLarge -> { toast(copied.text); return@launch }
+                        is Staging.CopyResult.Failed -> { toast(copied.text); return@launch }
                     }
-
-                    val target = File(stagingDir, java.util.UUID.randomUUID().toString())
-                    val copied = withContext(Dispatchers.IO) {
-                        runCatching {
-                            contentResolver.openInputStream(uri)?.use { input ->
-                                target.outputStream().use { out ->
-                                    val buf = ByteArray(64 * 1024)
-                                    var total = 0L
-                                    while (true) {
-                                        if (cancelled) return@runCatching false
-                                        val n = input.read(buf)
-                                        if (n <= 0) break
-                                        total += n
-                                        if (total > maxBytes) {
-                                            toast("单个文件不能超过 ${maxBytes / (1024 * 1024)} MB")
-                                            return@runCatching false
-                                        }
-                                        out.write(buf, 0, n)
-                                    }
-                                }
-                            } ?: return@runCatching false
-                            true
-                        }.getOrDefault(false)
-                    }
-                    if (!copied) {
-                        target.delete()
-                        if (!cancelled) toast("接收文件失败")
-                        cleanup(staged)
-                        finish()
-                        return@launch
-                    }
-                    staged.add(StagedFile(target, displayName))
                 }
 
                 if (cancelled) return@launch
                 progress = 1f
                 progressText = "正在加入…"
-                val result = app.send.enqueueFiles(staged, text)
-                when (result) {
-                    is com.minidrop.app.sync.SendResult.Ok -> toast(getString(com.minidrop.app.R.string.joined_minidrop))
-                    is com.minidrop.app.sync.SendResult.Fail -> {
-                        toast(result.text)
-                        cleanup(staged)
-                    }
+                // Once committing starts, cancellation must not delete files owned by a queued job.
+                val result = withContext(NonCancellable) {
+                    val send = if (staged.isEmpty()) app.send.enqueueText(text.orEmpty())
+                        else app.send.enqueueFiles(staged, text)
+                    enqueued = send is SendResult.Ok
+                    send
                 }
+                when (result) {
+                    is SendResult.Ok -> {
+                        toast(getString(com.minidrop.app.R.string.joined_minidrop))
+                    }
+                    is SendResult.Fail -> toast(result.text)
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
-                cleanup(staged)
                 toast("接收文件失败")
             } finally {
+                if (!enqueued) Staging.cleanup(staged)
                 finish()
             }
         }
-    }
-
-    private fun cleanup(staged: List<StagedFile>) {
-        staged.forEach { try { it.file.delete() } catch (_: Exception) {} }
     }
 
     private fun toast(text: String) {
         runOnUiThread { Toast.makeText(this, text, Toast.LENGTH_SHORT).show() }
     }
 
-    private fun queryDisplayName(uri: Uri): String? = try {
-        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            if (cursor.moveToFirst() && nameIdx >= 0) cursor.getString(nameIdx) else null
-        }
-    } catch (_: Exception) {
-        null
-    }
-
-    private fun querySize(uri: Uri): Long? = try {
-        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
-            if (cursor.moveToFirst() && sizeIdx >= 0 && !cursor.isNull(sizeIdx)) cursor.getLong(sizeIdx) else null
-        }
-    } catch (_: Exception) {
-        null
-    }
 }

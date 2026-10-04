@@ -1,6 +1,5 @@
 using System.IO;
 using System.IO.Pipes;
-using System.Text;
 using System.Text.Json;
 
 namespace MiniDrop.Windows.Infrastructure;
@@ -15,6 +14,14 @@ public sealed class SingleInstance : IDisposable
     private const string PipeName = "MiniDrop.IPC";
     private const int MaxFiles = 50;
     private const int MaxMessageBytes = 1024 * 1024;
+    private readonly string _pipeName;
+    private readonly string _mutexName;
+
+    public SingleInstance(string pipeName = PipeName, string mutexName = MutexName)
+    {
+        _pipeName = pipeName;
+        _mutexName = mutexName;
+    }
 
     private Mutex? _mutex;
     private CancellationTokenSource? _serverCts;
@@ -22,24 +29,27 @@ public sealed class SingleInstance : IDisposable
 
     public bool IsFirstInstance()
     {
-        _mutex = new Mutex(initiallyOwned: true, MutexName, out var createdNew);
+        _mutex = new Mutex(initiallyOwned: true, _mutexName, out var createdNew);
         return createdNew;
     }
 
-    public static bool TryForwardToFirstInstance(IReadOnlyList<string> files, string? text)
+    public static async Task<bool> TryForwardToFirstInstanceAsync(
+        IReadOnlyList<string> files, string? text, string pipeName = PipeName)
     {
         try
         {
-            using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out);
-            client.Connect(2000);
             var payload = JsonSerializer.SerializeToUtf8Bytes(new IpcMessage(files, text));
             if (payload.Length > MaxMessageBytes || files.Count > MaxFiles)
                 return false;
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            await using var client = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            await client.ConnectAsync(timeout.Token).ConfigureAwait(false);
             var len = BitConverter.GetBytes(payload.Length);
-            client.Write(len);
-            client.Write(payload);
-            client.Flush();
-            return true;
+            await client.WriteAsync(len, timeout.Token).ConfigureAwait(false);
+            await client.WriteAsync(payload, timeout.Token).ConfigureAwait(false);
+            await client.FlushAsync(timeout.Token).ConfigureAwait(false);
+            var acknowledgement = await ReadExactAsync(client, 1, timeout.Token).ConfigureAwait(false);
+            return acknowledgement[0] == 1;
         }
         catch
         {
@@ -48,39 +58,47 @@ public sealed class SingleInstance : IDisposable
     }
 
     /// <summary>首实例启动管道服务；收到文件后回调（已 marshal 到 UI 线程前）。</summary>
-    public void StartServer(Action<IReadOnlyList<string>, string?> onReceive)
+    public void StartServer(Func<IReadOnlyList<string>, string?, Task<bool>> onReceive)
     {
         _serverCts = new CancellationTokenSource();
+        var serverToken = _serverCts.Token;
         _serverTask = Task.Run(async () =>
         {
-            while (!_serverCts.IsCancellationRequested)
+            while (!serverToken.IsCancellationRequested)
             {
                 try
                 {
-                    await using var server = new NamedPipeServerStream(PipeName, PipeDirection.In);
-                    await server.WaitForConnectionAsync(_serverCts.Token).ConfigureAwait(false);
-                    var lenBuf = await ReadExactAsync(server, 4, _serverCts.Token).ConfigureAwait(false);
+                    await using var server = new NamedPipeServerStream(_pipeName, PipeDirection.InOut,
+                        1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                    await server.WaitForConnectionAsync(serverToken).ConfigureAwait(false);
+                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(serverToken);
+                    timeout.CancelAfter(TimeSpan.FromSeconds(15));
+                    var lenBuf = await ReadExactAsync(server, 4, timeout.Token).ConfigureAwait(false);
                     var len = BitConverter.ToInt32(lenBuf);
                     if (len is <= 0 or > MaxMessageBytes)
                         continue;
-                    var payload = await ReadExactAsync(server, len, _serverCts.Token).ConfigureAwait(false);
+                    var payload = await ReadExactAsync(server, len, timeout.Token).ConfigureAwait(false);
                     var msg = JsonSerializer.Deserialize<IpcMessage>(payload);
                     if (msg?.Files is not { Count: > 0 } files || files.Count > MaxFiles)
+                    {
+                        await server.WriteAsync(new byte[] { 0 }, timeout.Token).ConfigureAwait(false);
                         continue;
-                    if (files.Any(f => !File.Exists(f)))
-                        continue;
-                    onReceive(files, msg.Text);
+                    }
+                    // Let the send service report missing/unreadable files in the visible UI.
+                    var accepted = await onReceive(files, msg.Text).ConfigureAwait(false);
+                    await server.WriteAsync(new byte[] { accepted ? (byte)1 : (byte)0 }, timeout.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
-                    return;
+                    if (serverToken.IsCancellationRequested)
+                        return;
                 }
                 catch
                 {
                     // 单个连接失败不影响服务
                 }
             }
-        }, _serverCts.Token);
+        }, serverToken);
     }
 
     private static async Task<byte[]> ReadExactAsync(PipeStream stream, int count, CancellationToken ct)
@@ -123,9 +141,7 @@ public static class SendToShortcut
     {
         try
         {
-            var link = LinkPath();
-            if (File.Exists(link))
-                return;
+            // Refresh the executable target after moving or updating the app.
             Create();
         }
         catch
@@ -141,6 +157,8 @@ public static class SendToShortcut
         dynamic shell = Activator.CreateInstance(shellType)!;
         dynamic shortcut = shell.CreateShortcut(LinkPath());
         shortcut.TargetPath = Environment.ProcessPath ?? "";
+        shortcut.Arguments = "";
+        shortcut.WorkingDirectory = Path.GetDirectoryName(Environment.ProcessPath) ?? "";
         shortcut.Description = "把文件发送到 MiniDrop";
         shortcut.Save();
     }

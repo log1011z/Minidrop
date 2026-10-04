@@ -1,7 +1,9 @@
 using System.Collections.Specialized;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using MiniDrop.Windows.Infrastructure;
 using MiniDrop.Windows.ViewModels;
@@ -10,8 +12,41 @@ namespace MiniDrop.Windows.Views;
 
 public partial class MainWindow : Window
 {
+    private void MessageText_SizeChanged(object sender, SizeChangedEventArgs e)
+        => UpdateMessageText(sender);
+
+    private void MessageText_Loaded(object sender, RoutedEventArgs e)
+        => UpdateMessageText(sender);
+
+    private void MessageText_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+        => Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => UpdateMessageText(sender));
+
+    private static void UpdateMessageText(object sender)
+    {
+        if (sender is not SelectableMessageText { DataContext: MessageViewModel message } text || text.ActualWidth <= 0)
+            return;
+        var fullText = new TextBlock
+        {
+            Text = message.Text,
+            TextWrapping = TextWrapping.Wrap,
+            FontFamily = text.FontFamily,
+            FontSize = text.FontSize,
+            FontWeight = text.FontWeight,
+            FontStyle = text.FontStyle,
+            LineHeight = 20,
+            MaxHeight = 120,
+        };
+        fullText.Measure(new Size(text.ActualWidth, double.PositiveInfinity));
+        message.ShowTextToggle = fullText.DesiredSize.Height > 100;
+    }
+
     private readonly MainViewModel _vm;
     private readonly DispatcherTimer _pollTimer;
+    private ScrollViewer? _timelineScroll;
+    private double _scrollTarget;
+    private long _lastScrollFrame;
+    private bool _animatingScroll;
+    private (MessageViewModel Message, double Top)? _scrollAnchor;
     private bool _hintedOnce;
     public required App App { get; init; }
 
@@ -20,6 +55,8 @@ public partial class MainWindow : Window
         InitializeComponent();
         _vm = vm;
         DataContext = vm;
+        InputBox.CommandBindings.Add(new CommandBinding(ApplicationCommands.Paste, PasteIntoDraft, CanPasteIntoDraft));
+        _vm.Timeline.CollectionChanged += Timeline_CollectionChanged;
         try
         {
             Icon = System.Windows.Media.Imaging.BitmapFrame.Create(
@@ -28,10 +65,16 @@ public partial class MainWindow : Window
         catch { /* 图标加载失败不影响主流程 */ }
 
         _pollTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        _pollTimer.Tick += (_, _) => _vm.PollJobStates();
+        _pollTimer.Tick += (_, _) =>
+        {
+            if (IsVisible && !_animatingScroll)
+                _vm.PollJobStates(_vm.Timeline.Where(vm =>
+                    TimelineList.ItemContainerGenerator.ContainerFromItem(vm) is FrameworkElement));
+        };
         _pollTimer.Start();
 
         Loaded += (_, _) => InputBox.Focus();
+        RootBorder.SizeChanged += (_, _) => UpdateRootClip();
     }
 
     public IntPtr GetHwnd() => new System.Windows.Interop.WindowInteropHelper(this).EnsureHandle();
@@ -45,7 +88,11 @@ public partial class MainWindow : Window
         InputBox.Focus();
     }
 
-    public void HideToTray() => Hide();
+    public void HideToTray()
+    {
+        StopScrollAnimation();
+        Hide();
+    }
 
     // ---------- 自定义标题栏 ----------
 
@@ -110,8 +157,24 @@ public partial class MainWindow : Window
         var maximized = WindowState == WindowState.Maximized;
         RootBorder.CornerRadius = maximized ? new CornerRadius(0) : new CornerRadius(8);
         RootBorder.Margin = maximized ? new Thickness(6) : new Thickness(0);
+        UpdateRootClip();
         if (MaxRestoreButton is not null)
             MaxRestoreButton.Content = maximized ? "\uE923" : "\uE922";
+    }
+
+    /// <summary>
+    /// Border.CornerRadius only rounds the border's own drawing; it does not clip
+    /// child backgrounds. Clip the complete visual tree so the transparent window
+    /// has real rounded corners rather than square title-bar pixels at the corners.
+    /// </summary>
+    private void UpdateRootClip()
+    {
+        if (RootBorder is null || RootBorder.ActualWidth <= 0 || RootBorder.ActualHeight <= 0)
+            return;
+
+        var radius = WindowState == WindowState.Maximized ? 0d : 8d;
+        RootBorder.Clip = new RectangleGeometry(
+            new Rect(0, 0, RootBorder.ActualWidth, RootBorder.ActualHeight), radius, radius);
     }
 
     // ---------- 热键/关闭行为 ----------
@@ -147,7 +210,7 @@ public partial class MainWindow : Window
         };
         if (dialog.ShowDialog(this) == true && dialog.FileNames.Length > 0)
         {
-            _ = _vm.SendFilesAsync(dialog.FileNames, null);
+            _vm.AddAttachments(dialog.FileNames);
         }
     }
 
@@ -193,18 +256,44 @@ public partial class MainWindow : Window
         _ = _vm.SendCommand.ExecuteAsync(null);
     }
 
-    private void InputBox_KeyDown(object sender, KeyEventArgs e)
+    private void CanPasteIntoDraft(object sender, CanExecuteRoutedEventArgs e)
     {
-        if (e.Key == Key.V && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        try { e.CanExecute = Clipboard.ContainsFileDropList() || Clipboard.ContainsImage() || Clipboard.ContainsText(); }
+        catch { e.CanExecute = false; }
+        e.Handled = true;
+    }
+
+    private void PasteIntoDraft(object sender, ExecutedRoutedEventArgs e)
+    {
+        e.Handled = true;
+        try
         {
-            // 剪贴板含文件列表 → 发送文件；否则默认粘贴文本（§9.5）
-            var files = ReadClipboardFiles();
-            if (files is { Count: > 0 })
+            if (Clipboard.GetDataObject() is { } data) PasteIntoDraft(data);
+        }
+        catch { _vm.StatusText = "粘贴失败，请重试"; }
+    }
+
+    public void PasteIntoDraft(IDataObject data, string? screenshotDirectory = null)
+    {
+        try
+        {
+            if (data.GetData(DataFormats.FileDrop) is string[] { Length: > 0 } files)
             {
-                e.Handled = true;
-                _ = _vm.SendFilesAsync(files.Cast<string>().ToList(), null);
+                _vm.AddAttachments(files);
+            }
+            else if (data.GetData(DataFormats.Bitmap) is System.Windows.Media.Imaging.BitmapSource image)
+            {
+                var directory = screenshotDirectory ?? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MiniDrop", "screenshots");
+                _vm.AddAttachments([ClipboardImageStore.Save(image, directory)], isTemporary: true);
+            }
+            else if (data.GetData(DataFormats.UnicodeText) is string text)
+            {
+                InputBox.SelectedText = text;
+                InputBox.CaretIndex = InputBox.SelectionStart + InputBox.SelectionLength;
+                InputBox.SelectionLength = 0;
             }
         }
+        catch { _vm.StatusText = "粘贴失败，请重试"; }
     }
 
     private void Window_Drop(object sender, DragEventArgs e)
@@ -213,31 +302,108 @@ public partial class MainWindow : Window
         {
             var files = (string[])e.Data.GetData(DataFormats.FileDrop)!;
             if (files.Length > 0)
-                _ = _vm.SendFilesAsync(files.Cast<string>().ToList(), null);
+                _vm.AddAttachments(files);
             e.Handled = true;
-        }
-    }
-
-    private static StringCollection? ReadClipboardFiles()
-    {
-        try
-        {
-            return Clipboard.ContainsFileDropList() ? Clipboard.GetFileDropList() : null;
-        }
-        catch
-        {
-            return null;
         }
     }
 
     private void TimelineList_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        // 滚到顶部继续读本地页（§9.4 本地分页）
-        if (e.Delta < 0)
+        _timelineScroll ??= FindScroll(TimelineList);
+        if (_timelineScroll is not { ScrollableHeight: > 0 } scroll)
             return;
-        var scroll = (ScrollViewer)FindScroll(TimelineList)!;
-        if (scroll is not null && scroll.VerticalOffset == 0)
+        var lines = SystemParameters.WheelScrollLines;
+        if (lines == 0) return;
+        var step = lines < 0 ? scroll.ViewportHeight : lines * 20d;
+        _scrollTarget = Math.Clamp((_animatingScroll ? _scrollTarget : scroll.VerticalOffset)
+            - e.Delta / 120d * step, 0, scroll.ScrollableHeight);
+        e.Handled = true;
+        if (!SystemParameters.ClientAreaAnimation)
+        {
+            scroll.ScrollToVerticalOffset(_scrollTarget);
+            return;
+        }
+        if (!_animatingScroll)
+        {
+            _animatingScroll = true;
+            _lastScrollFrame = Stopwatch.GetTimestamp();
+            CompositionTarget.Rendering += AnimateScroll;
+        }
+    }
+
+    private void AnimateScroll(object? sender, EventArgs e)
+    {
+        if (_timelineScroll is not { } scroll || !IsVisible)
+        {
+            StopScrollAnimation();
+            return;
+        }
+        var now = Stopwatch.GetTimestamp();
+        var elapsed = Math.Clamp((now - _lastScrollFrame) / (double)Stopwatch.Frequency, 0, 0.1);
+        _lastScrollFrame = now;
+        _scrollTarget = Math.Clamp(_scrollTarget, 0, scroll.ScrollableHeight);
+        var remaining = _scrollTarget - scroll.VerticalOffset;
+        if (Math.Abs(remaining) < 0.5)
+        {
+            scroll.ScrollToVerticalOffset(_scrollTarget);
+            StopScrollAnimation();
+            return;
+        }
+        scroll.ScrollToVerticalOffset(scroll.VerticalOffset + remaining * (1 - Math.Exp(-elapsed * 22)));
+    }
+
+    private void StopScrollAnimation()
+    {
+        CompositionTarget.Rendering -= AnimateScroll;
+        _animatingScroll = false;
+    }
+
+    private void TimelineList_PreviewMouseDown(object sender, MouseButtonEventArgs e) => StopScrollAnimation();
+    private void TimelineList_PreviewKeyDown(object sender, KeyEventArgs e) => StopScrollAnimation();
+
+    private void TimelineList_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        // Read the next local page near the bottom; do not make a network request.
+        if (e.OriginalSource is ScrollViewer scroll && scroll == FindScroll(TimelineList)
+            && e.VerticalChange > 0 && scroll.ScrollableHeight - scroll.VerticalOffset < scroll.ViewportHeight)
             _vm.LoadMoreLocal();
+    }
+
+    private void Timeline_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        _timelineScroll ??= FindScroll(TimelineList);
+        if (_scrollAnchor is not null || _timelineScroll is not { VerticalOffset: > 1 } scroll)
+            return;
+        foreach (var message in _vm.Timeline)
+        {
+            if (TimelineList.ItemContainerGenerator.ContainerFromItem(message) is not FrameworkElement container)
+                continue;
+            var top = container.TranslatePoint(new Point(), scroll).Y;
+            if (top + container.ActualHeight <= 0 || top >= scroll.ViewportHeight)
+                continue;
+            _scrollAnchor = (message, top);
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, RestoreScrollAnchor);
+            break;
+        }
+    }
+
+    private void RestoreScrollAnchor()
+    {
+        if (_scrollAnchor is not { } anchor || _timelineScroll is not { } scroll)
+            return;
+        _scrollAnchor = null;
+        if (!_vm.Timeline.Contains(anchor.Message)) return;
+        if (TimelineList.ItemContainerGenerator.ContainerFromItem(anchor.Message) is not FrameworkElement)
+        {
+            TimelineList.ScrollIntoView(anchor.Message);
+            TimelineList.UpdateLayout();
+        }
+        if (TimelineList.ItemContainerGenerator.ContainerFromItem(anchor.Message) is FrameworkElement container)
+        {
+            var adjustment = container.TranslatePoint(new Point(), scroll).Y - anchor.Top;
+            scroll.ScrollToVerticalOffset(scroll.VerticalOffset + adjustment);
+            if (_animatingScroll) _scrollTarget += adjustment;
+        }
     }
 
     private static ScrollViewer? FindScroll(DependencyObject root)

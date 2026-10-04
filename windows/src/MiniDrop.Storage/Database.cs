@@ -3,24 +3,30 @@ using Microsoft.Data.Sqlite;
 namespace MiniDrop.Storage;
 
 /// <summary>
-/// 本地 SQLite 事实源。单连接 + 写锁串行（队列与索引都在此库）。
+/// 本地 SQLite 事实源。每个操作独立租用连接，事务内复用事务所属连接。
 /// DDL 与设计文档 §4.1 一致；raw_json 不存在。
 /// </summary>
 public sealed class Database : IDisposable
 {
     private readonly SqliteConnection _connection;
+    private readonly string _connectionString;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private volatile bool _disposed;
 
     public Database(string path)
     {
         var dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        _connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        _connectionString = new SqliteConnectionStringBuilder
         {
-            DataSource = path,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Pooling = false,
-        }.ToString());
+            DataSource = path == ":memory:" ? "minidrop-" + Guid.NewGuid() : path,
+            Mode = path == ":memory:" ? SqliteOpenMode.Memory : SqliteOpenMode.ReadWriteCreate,
+            Cache = path == ":memory:" ? SqliteCacheMode.Shared : SqliteCacheMode.Default,
+            ForeignKeys = true,
+            Pooling = true,
+        }.ToString();
+        // Only initialization uses this connection; it also keeps an in-memory database alive.
+        _connection = new SqliteConnection(_connectionString);
         _connection.Open();
         Execute("PRAGMA foreign_keys = ON;");
         Execute("PRAGMA journal_mode = WAL;");
@@ -28,7 +34,24 @@ public sealed class Database : IDisposable
         Migrate();
     }
 
-    public SqliteConnection Connection => _connection;
+    public SqliteConnection OpenConnection()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var connection = new SqliteConnection(_connectionString);
+        try
+        {
+            connection.Open();
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "PRAGMA synchronous = NORMAL;";
+            cmd.ExecuteNonQuery();
+            return connection;
+        }
+        catch
+        {
+            connection.Dispose();
+            throw;
+        }
+    }
 
     /// <summary>写事务（同步版）：在写锁内执行，异常回滚。</summary>
     public T Write<T>(Func<SqliteTransaction, T> action)
@@ -36,7 +59,8 @@ public sealed class Database : IDisposable
         _writeLock.Wait();
         try
         {
-            using var tx = _connection.BeginTransaction();
+            using var connection = OpenConnection();
+            using var tx = connection.BeginTransaction();
             try
             {
                 var result = action(tx);
@@ -63,7 +87,8 @@ public sealed class Database : IDisposable
         await _writeLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            await using var tx = (SqliteTransaction)await _connection.BeginTransactionAsync().ConfigureAwait(false);
+            await using var connection = OpenConnection();
+            await using var tx = (SqliteTransaction)await connection.BeginTransactionAsync().ConfigureAwait(false);
             try
             {
                 var result = await action(tx).ConfigureAwait(false);
@@ -87,8 +112,18 @@ public sealed class Database : IDisposable
 
     public void Dispose()
     {
-        _connection.Dispose();
-        _writeLock.Dispose();
+        _writeLock.Wait();
+        try
+        {
+            if (_disposed) return;
+            _disposed = true;
+            SqliteConnection.ClearPool(_connection);
+            _connection.Dispose();
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
     }
 
     private void Execute(string sql)

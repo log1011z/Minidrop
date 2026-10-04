@@ -2,6 +2,8 @@
 
 # MiniDrop
 
+当前正式版：**v1.1** · [下载安装包](https://github.com/log1011z/Minidrop/releases/tag/v1.1) · [更新说明](docs/RELEASE-v1.1.md)
+
 **个人多设备间的 self-chat 式文件与文字投递工具**
 
 以聊天时间线为界面、以坚果云 WebDAV 为公共存储。
@@ -68,8 +70,8 @@ dotnet publish src/MiniDrop.Windows/MiniDrop.Windows.csproj `
 
 ```bash
 cd android
-./gradlew assembleDebug        # app/build/outputs/apk/debug/app-debug.apk
-./gradlew testDebugUnitTest    # 与 C# 共享同一批协议夹具
+./gradlew assembleRelease     # 配置本机 keystore.properties 后生成正式签名 APK
+./gradlew testReleaseUnitTest # 与 C# 共享同一批协议夹具
 ```
 
 要求 JDK 17+（Android Studio 自带 JBR 25 时，请在 Gradle 设置中选择 JDK 17/21）。
@@ -80,8 +82,18 @@ cd android
 1. 在坚果云网页版「安全选项」中生成**应用密码**（不要使用登录密码）
 2. Windows：启动后按 `Ctrl+Shift+D`，右上角 ⚙ 填入账号与应用密码，测试连接后保存
 3. Android：⚙ 设置中同样配置
-4. 任一端发送，另一端手动刷新即可看到；文件点击下载后打开
+4. 任一端发送，另一端手动刷新即可看到；文件点击“下载并打开”即可取用
 5. 可选：运行 `m0/MiniDrop.M0` 工具在真实账号上验证服务行为（见 [docs/M0-RESULTS.md](docs/M0-RESULTS.md)）
+
+手机可通过系统分享菜单投递文件或文字；电脑可通过右键「发送到 → MiniDrop」投递文件。
+主界面选择、拖入或粘贴文件后，会先出现在附件区，可以移除附件、补充文字，再一起发送；仅附件也可以发送。系统分享/“发送到”仍直接投递。
+Windows 支持 Ctrl+V 粘贴截图，自动作为 PNG 附件加入输入区；文件卡右键提供“复制文件”“打开所在文件夹”和“仅下载”。Android 文件卡的分享按钮可直接分享给其他应用，尚未下载时会先下载。
+Android 上传失败或等待重试时可点击消息上的“重试”，不显示上传失败原因。两端刷新与发送相互独立；只修改下载目录、设备名等本地偏好可以离线保存，连接配置变更才需要测试连接。
+电脑分享会在文件加入本地队列后确认，失败时显示提示。两端长文字默认显示约 5 行，点击「展开全文」查看，点击「收起」恢复预览。Windows 可拖选局部文字后 Ctrl+C 或右键复制，Android 可长按正文选择文字并使用系统复制菜单；点击 http/https 或 www 链接会打开浏览器，不另加复制按钮。Android 长按消息顶部的设备名/时间区域可删除消息。
+
+图片消息支持缩略图和应用内放大预览。本机原图或已下载缓存直接显示；远端图片先显示“点击加载图片”，点击后下载并预览，不自动下载历史图片。Android 预览支持双指缩放、拖动和复位；Windows 预览支持使用其他应用打开。暂不播放动图，预览显示静态帧。
+
+Windows 时间线支持像素平滑滚动与拖动滚动条；刷新、新投递不会打断正在阅读旧消息的位置。滚到列表底部会继续读取本地记录，远端更早消息仍通过「加载更早」获取。
 
 ## 仓库结构
 
@@ -100,8 +112,9 @@ cd android
 
 ## 测试
 
-- Windows：xUnit，91 个用例（协议夹具、上传状态机、同步窗口、删除故障注入、下载校验）
-- Android：JUnit，同一批夹具（协议一致性、ULID/月份边界、墓碑解析）
+- Windows：xUnit，101 个用例（协议夹具、上传状态机、同步窗口、删除故障注入、下载校验、数据库并发和发送边界）。
+- Android：JUnit，52 个用例（协议一致性、分享入口、暂存文件保护、上传校验值、附件草稿、刷新期间发送、重试、文件打开/分享、链接识别和本地时区显示）。
+- Windows 界面检查：`dotnet run --project windows/tests/MiniDrop.UiChecks -- artifacts/ui`，使用独立测试数据库验证像素偏移、虚拟化、阅读位置、文本收起、本地与远端历史分页及草稿保留，并输出普通、窄窗口、文件与空列表的实际界面 PNG；远端检查使用本机模拟服务，不访问真实账号。
 
 ## 许可证
 

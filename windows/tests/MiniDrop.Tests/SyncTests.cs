@@ -10,6 +10,8 @@ public class SyncTests : IDisposable
     private readonly CancellationToken _ct = CancellationToken.None;
 
     private static readonly DateTimeOffset Sep1 = new(2026, 9, 1, 0, 0, 0, TimeSpan.Zero);
+    private static DateTimeOffset CurrentMonth => new(DateTimeOffset.UtcNow.Year,
+        DateTimeOffset.UtcNow.Month, 1, 0, 0, 0, TimeSpan.Zero);
 
     private string SeedItem(DateTimeOffset ts, string? text = "hello")
     {
@@ -37,11 +39,12 @@ public class SyncTests : IDisposable
     [Fact]
     public async Task Refresh_FirstRun_GoesBackUpTo3Months()
     {
-        // 当前月 0 条、8 月 5 条、7 月 5 条、6 月 5 条 → 最多扫 3 个月，凑 10 条
-        SeedItems(2026, 9, 0);
-        SeedItems(2026, 8, 5);
-        SeedItems(2026, 7, 5);
-        SeedItems(2026, 6, 5);
+        // Current month empty; only the previous two months fit the three-month scan.
+        for (var offset = 1; offset <= 3; offset++)
+        {
+            var month = CurrentMonth.AddMonths(-offset);
+            SeedItems(month.Year, month.Month, 5);
+        }
 
         var r = await _h.Sync.RefreshAsync(_ct);
         Assert.Equal(10, r.Added);
@@ -64,7 +67,7 @@ public class SyncTests : IDisposable
     {
         var curIds = new List<string>();
         for (var i = 0; i < 25; i++)
-            curIds.Add(SeedItem(Sep1.AddMilliseconds(i)));
+            curIds.Add(SeedItem(CurrentMonth.AddMilliseconds(i)));
 
         var r1 = await _h.Sync.RefreshAsync(_ct); // 初始化：拿最近 20
         Assert.Equal(20, r1.Added);

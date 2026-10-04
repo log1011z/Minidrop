@@ -49,6 +49,17 @@ public partial class App : Application
             Log.Error("fatal", $"{ex?.GetType().Name}: {ex?.Message}");
         };
 
+        // Determine ownership before opening or recovering the shared database.
+        _singleInstance = new SingleInstance();
+        if (!_singleInstance.IsFirstInstance())
+        {
+            if (e.Args.Length > 0 && !await SingleInstance.TryForwardToFirstInstanceAsync(e.Args, null))
+                MessageBox.Show("未能把文件加入 MiniDrop，请打开 MiniDrop 后重试。", "MiniDrop 分享失败",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            Shutdown();
+            return;
+        }
+
         var dataDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         _db = new Database(System.IO.Path.Combine(dataDir, "MiniDrop", "minidrop.db"));
         Db = _db;
@@ -67,18 +78,6 @@ public partial class App : Application
                 NotifyOnSendFailure = s.NotifyOnSendFailure,
             };
         };
-
-        // 单实例：第二实例把文件转发给首实例后退出
-        _singleInstance = new SingleInstance();
-        if (!_singleInstance.IsFirstInstance())
-        {
-            if (e.Args.Length > 0)
-            {
-                SingleInstance.TryForwardToFirstInstance(e.Args, null);
-            }
-            Shutdown();
-            return;
-        }
 
         // 启动恢复与本地清理（零网络）
         var mutex = new SyncMutex();
@@ -107,10 +106,6 @@ public partial class App : Application
         var download = new DownloadService(Db, DavFactory, OptionsFactory, transfers, Log);
 
         Services.Configure(Db, OptionsFactory, send, sync, maintenance, delete, download, _pump, transfers);
-
-        // 命名管道接收 SendTo/第二实例文件
-        _singleInstance.StartServer((files, text) =>
-            Dispatcher.BeginInvoke(() => _ = _mainVm?.SendFilesAsync(files, text)));
 
         // 托盘（代码创建的 TaskbarIcon 必须 ForceCreate 才会真正注册到通知区域）
         _tray = new TaskbarIcon
@@ -148,6 +143,14 @@ public partial class App : Application
         var window = new MainWindow(_mainVm) { App = this };
         MainWindow = window;
         SendToShortcut.Ensure();
+
+        // Accept shares only after the view model exists; acknowledge after durable enqueue.
+        _singleInstance.StartServer(async (files, text) =>
+            await await Dispatcher.InvokeAsync(async () =>
+            {
+                ShowMainWindow();
+                return await _mainVm.SendFilesAsync(files, text);
+            }));
 
         if (e.Args.Length > 0)
         {

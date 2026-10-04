@@ -45,7 +45,7 @@ class SettingsActivity : ComponentActivity() {
         val app = application as MiniDropApp
         enableEdgeToEdge()
         setContent {
-            MaterialTheme {
+            MiniDropTheme {
                 Surface {
                     SettingsScreen(app = app, onFinish = { finish() })
                 }
@@ -67,6 +67,8 @@ private fun SettingsScreen(app: MiniDropApp, onFinish: () -> Unit) {
     var status by remember { mutableStateOf("") }
     var testing by remember { mutableStateOf(false) }
     var originalAccount by remember { mutableStateOf(app.settingsSnapshot.account) }
+    val originalRootUrl = remember { app.settingsSnapshot.rootUrl }
+    val originalPassword = remember { app.passwordSnapshot.orEmpty() }
     var downloadDirName by remember {
         mutableStateOf(
             app.settingsSnapshot.downloadTreeUri
@@ -79,13 +81,17 @@ private fun SettingsScreen(app: MiniDropApp, onFinish: () -> Unit) {
     ) { uri ->
         if (uri != null) {
             scope.launch {
-                runCatching {
+                val saved = runCatching {
                     context.contentResolver.takePersistableUriPermission(
                         uri,
                         android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
                             android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
                     )
                     app.settings.saveDownloadTree(uri.toString())
+                }
+                if (saved.isFailure) {
+                    status = "下载目录保存失败，请重新选择"
+                    return@launch
                 }
                 downloadDirName = com.minidrop.app.sync.SafeDownloads.treeDisplayName(uri.toString())
                     ?: uri.lastPathSegment
@@ -167,11 +173,15 @@ private fun SettingsScreen(app: MiniDropApp, onFinish: () -> Unit) {
                         scope.launch {
                             testing = true
                             val effectivePassword = password.ifBlank { app.passwordSnapshot ?: "" }
-                            val (ok, error) = testConnection(rootUrl, account, effectivePassword)
-                            if (!ok) {
-                                status = error ?: "保存失败：连接测试未通过"
-                                testing = false
-                                return@launch
+                            val connectionChanged = rootUrl.trim() != originalRootUrl ||
+                                account.trim() != originalAccount || effectivePassword != originalPassword
+                            if (connectionChanged) {
+                                val (ok, error) = testConnection(rootUrl, account, effectivePassword)
+                                if (!ok) {
+                                    status = error ?: "保存失败：连接测试未通过"
+                                    testing = false
+                                    return@launch
+                                }
                             }
                             // 数据集切换确认（§11.3）
                             val accountChanged = account.trim() != originalAccount && originalAccount.isNotBlank()
@@ -193,7 +203,7 @@ private fun SettingsScreen(app: MiniDropApp, onFinish: () -> Unit) {
                                 notifyOnSend = true,
                             )
                             if (password.isNotBlank()) app.settings.savePassword(password)
-                            app.refreshCredentials()
+                            if (connectionChanged) app.refreshCredentials()
                             originalAccount = account.trim()
                             status = "已保存 ✓"
                             testing = false

@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using MiniDrop.Application;
 using MiniDrop.Domain;
@@ -9,7 +10,7 @@ using MiniDrop.Windows.Infrastructure;
 
 namespace MiniDrop.Windows.Views;
 
-/// <summary>设置（§11）：测试连接成功才保存；变更行为按 §11.3。</summary>
+/// <summary>连接变更通过测试后保存；本地偏好可离线保存。</summary>
 public partial class SettingsWindow : Window
 {
     private readonly SettingsViewModel _vm;
@@ -20,6 +21,17 @@ public partial class SettingsWindow : Window
         _vm = new SettingsViewModel();
         DataContext = _vm;
         Loaded += (_, _) => PasswordBox.Password = _vm.LoadedPassword ?? "";
+        RootBorder.SizeChanged += (_, _) => UpdateRootClip();
+    }
+
+    /// <summary>Clip child backgrounds to the same radius drawn by RootBorder.</summary>
+    private void UpdateRootClip()
+    {
+        if (RootBorder.ActualWidth <= 0 || RootBorder.ActualHeight <= 0)
+            return;
+
+        RootBorder.Clip = new RectangleGeometry(
+            new Rect(0, 0, RootBorder.ActualWidth, RootBorder.ActualHeight), 8, 8);
     }
 
     private void BrowseDownloadDir_Click(object sender, RoutedEventArgs e)
@@ -116,17 +128,22 @@ public partial class SettingsViewModel : ObservableObject
     private readonly string _originalAccount;
     private readonly string _originalRootUrl;
     private readonly string _originalPassword;
+    private readonly Func<AppSettings> _loadSettings;
+    private readonly Action<AppSettings> _saveSettings;
 
-    public SettingsViewModel()
+    public SettingsViewModel(Func<AppSettings>? loadSettings = null, Action<AppSettings>? saveSettings = null,
+        Func<string?>? loadPassword = null)
     {
-        var s = AppSettings.Load();
+        _loadSettings = loadSettings ?? AppSettings.Load;
+        _saveSettings = saveSettings ?? (settings => settings.Save());
+        var s = _loadSettings();
         RootUrl = s.RootUrl;
         Account = s.Account;
         DeviceName = s.DeviceName;
         DownloadDir = s.DownloadDir;
         MaxFileMb = (s.MaxFileBytes / (1024 * 1024)).ToString();
         NotifyOnSendSuccess = s.NotifyOnSendSuccess;
-        LoadedPassword = CredentialManager.Load();
+        LoadedPassword = (loadPassword ?? CredentialManager.Load)();
         _originalAccount = s.Account;
         _originalRootUrl = s.RootUrl;
         _originalPassword = LoadedPassword ?? "";
@@ -192,11 +209,15 @@ public partial class SettingsViewModel : ObservableObject
 
     public async Task<(bool Ok, string? Error)> SaveAsync(string password, Window owner)
     {
-        var (ok, error) = await TestConnectionAsync(password);
-        if (!ok)
-            return (false, error);
+        var connectionChanged = Account.Trim() != _originalAccount
+            || RootUrl.Trim() != _originalRootUrl || password != _originalPassword;
+        if (connectionChanged)
+        {
+            var (ok, error) = await TestConnectionAsync(password);
+            if (!ok) return (false, error);
+        }
 
-        var s = AppSettings.Load();
+        var s = _loadSettings();
 
         // 账号或根 URL 变更 = 切换数据集（§11.3）
         var accountChanged = !string.Equals(Account.Trim(), _originalAccount, StringComparison.Ordinal);
@@ -213,14 +234,12 @@ public partial class SettingsViewModel : ObservableObject
 
             Services.Db.Write(tx =>
             {
-                using var cmd = Services.Db.Connection.CreateCommand();
+                using var cmd = tx.Connection!.CreateCommand();
                 cmd.Transaction = tx;
                 cmd.CommandText = "DELETE FROM messages; DELETE FROM rejected_items; DELETE FROM sync_months; DELETE FROM meta;";
                 cmd.ExecuteNonQuery();
             });
         }
-
-        var passwordChanged = password != _originalPassword;
 
         s.RootUrl = WebDavClient.NormalizeRootUrl(RootUrl);
         s.Account = Account.Trim();
@@ -228,16 +247,16 @@ public partial class SettingsViewModel : ObservableObject
         s.DownloadDir = DownloadDir;
         s.MaxFileBytes = Math.Max(1, long.TryParse(MaxFileMb, out var mb) ? mb : 500) * 1024 * 1024;
         s.NotifyOnSendSuccess = NotifyOnSendSuccess;
-        s.Save();
-
-        CredentialManager.Save(password);
-
-        // 测试连接刚证明凭据可用：重排 AUTH failed job 并立即唤醒上传泵。
-        // （此前账号/密码错误导致 AUTH 失败的任务，保存后无需逐条手点重试）
-        new JobDao(Services.Db).RequeueAuthFailed();
-        Services.Pump.Wake();
-
         Directory.CreateDirectory(s.DownloadDir);
+        _saveSettings(s);
+
+        if (connectionChanged)
+        {
+            CredentialManager.Save(password);
+            new JobDao(Services.Db).RequeueAuthFailed();
+            Services.Pump.Wake();
+        }
+
         return (true, null);
     }
 }

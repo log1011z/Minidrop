@@ -11,6 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\src\MiniDrop.Windows\Infrastructure\SingleInstance.cs" Link="SingleInstance.cs" />
     <ProjectReference Include="..\..\src\MiniDrop.Application\MiniDrop.Application.csproj" />
     <ProjectReference Include="..\..\src\MiniDrop.Domain\MiniDrop.Domain.csproj" />
     <ProjectReference Include="..\..\src\MiniDrop.Storage\MiniDrop.Storage.csproj" />

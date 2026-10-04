@@ -18,13 +18,14 @@ import androidx.work.WorkerParameters
 import java.util.concurrent.TimeUnit
 
 /**
- * 唯一后台上传执行器（§5.5）：minidrop_upload_pump，KEEP，约束网络可用。
+ * 唯一后台上传执行器：串行追加唤醒，约束网络可用。
  * Worker 循环消费数据库队列；耗尽后若仍有未到期 retry_wait，则按最早到期时间自我重排一次。
  */
 class UploadPumpWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
         val app = applicationContext as MiniDropApp
+        app.awaitReady()
         try {
             setForeground(foregroundInfo())
         } catch (_: Exception) {
@@ -75,19 +76,23 @@ class UploadPumpWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 )
                 .build()
             WorkManager.getInstance(context)
-                .enqueueUniqueWork(UNIQUE_NAME, ExistingWorkPolicy.KEEP, request)
+                .enqueueUniqueWork(UNIQUE_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
         }
 
         private fun enqueueDelayed(context: Context, delayMs: Long) {
-            val request = OneTimeWorkRequestBuilder<UploadPumpWorker>()
-                .setConstraints(
-                    Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build(),
-                )
-                .setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
-                .build()
-            // REPLACE：当前 worker 即将结束，用延迟任务顶替
+            // Keep retry timers separate so they never cancel a running upload or delay new shares.
             WorkManager.getInstance(context)
-                .enqueueUniqueWork(UNIQUE_NAME, ExistingWorkPolicy.REPLACE, request)
+                .enqueueUniqueWork("${UNIQUE_NAME}_retry", ExistingWorkPolicy.REPLACE,
+                    OneTimeWorkRequestBuilder<UploadWakeWorker>()
+                        .setInitialDelay(delayMs, TimeUnit.MILLISECONDS).build())
         }
+    }
+}
+
+/** A retry timer only wakes the serial pump; it never uploads concurrently. */
+class UploadWakeWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        UploadPumpWorker.enqueueNow(applicationContext)
+        return Result.success()
     }
 }

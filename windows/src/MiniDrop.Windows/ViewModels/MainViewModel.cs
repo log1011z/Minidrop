@@ -11,6 +11,11 @@ using MiniDrop.Windows.Infrastructure;
 
 namespace MiniDrop.Windows.ViewModels;
 
+public sealed record DraftAttachment(string Path, bool IsTemporary = false)
+{
+    public string Name => System.IO.Path.GetFileName(Path);
+}
+
 /// <summary>文件卡（§8.2 / §4.5：按下载状态显示）。</summary>
 public partial class FileItemViewModel : ObservableObject
 {
@@ -21,12 +26,19 @@ public partial class FileItemViewModel : ObservableObject
     [ObservableProperty] private string _actionText = "下载";
     [ObservableProperty] private bool _busy;
     [ObservableProperty] private double _progress;
+    [ObservableProperty] private bool _isImage;
+    [ObservableProperty] private System.Windows.Media.Imaging.BitmapSource? _thumbnail;
+    [ObservableProperty] private string _previewLabel = "点击加载图片";
+    private string? _imageKey;
 
     public event Action<FileItemViewModel>? ActionRequested;
     public event Action<FileItemViewModel>? OpenRequested;
+    public event Action<FileItemViewModel, string>? QuickActionRequested;
 
     public void RefreshState(FileRow row)
     {
+        IsImage = ImagePreview.IsImage(row.Name, row.Mime);
+        if (IsImage) UpdateThumbnail(row);
         StateText = row.State switch
         {
             FileStates.Remote => "",
@@ -40,11 +52,27 @@ public partial class FileItemViewModel : ObservableObject
             FileStates.Cached => "打开",
             FileStates.Failed => "重试",
             FileStates.Downloading => "…",
-            _ => "下载",
+            _ => "下载并打开",
         };
+        if (IsImage && row.State != FileStates.Downloading) ActionText = "预览";
         Busy = row.State == FileStates.Downloading;
         if (row.State != FileStates.Downloading)
             Progress = 0;
+    }
+
+    private async void UpdateThumbnail(FileRow row)
+    {
+        var path = new[] { row.CachePath, row.SourcePath }.FirstOrDefault(p => p is not null && File.Exists(p));
+        var key = path is null ? null : path + File.GetLastWriteTimeUtc(path).Ticks;
+        if (_imageKey == key) return;
+        _imageKey = key;
+        Thumbnail = null;
+        PreviewLabel = path is null ? "点击加载图片" : "正在加载图片…";
+        if (path is null) return;
+        var bitmap = await Task.Run(() => ImagePreview.Load(path, 512));
+        if (_imageKey != key) return;
+        Thumbnail = bitmap;
+        PreviewLabel = bitmap is null ? "无法生成缩略图，点击预览" : "";
     }
 
     [RelayCommand]
@@ -52,6 +80,10 @@ public partial class FileItemViewModel : ObservableObject
 
     [RelayCommand]
     private void Open() => OpenRequested?.Invoke(this);
+
+    [RelayCommand] private void CopyFile() => QuickActionRequested?.Invoke(this, "copy");
+    [RelayCommand] private void RevealFile() => QuickActionRequested?.Invoke(this, "reveal");
+    [RelayCommand] private void DownloadOnly() => QuickActionRequested?.Invoke(this, "download");
 }
 
 /// <summary>消息卡：状态推导（§4.5）。</summary>
@@ -67,6 +99,16 @@ public partial class MessageViewModel : ObservableObject
     [ObservableProperty] private bool _hasError;
     [ObservableProperty] private bool _showRetry;
     [ObservableProperty] private bool _hasText;
+    [ObservableProperty] private bool _showTextToggle;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TextMaxHeight))]
+    [NotifyPropertyChangedFor(nameof(TextToggleLabel))]
+    private bool _textExpanded;
+    public double TextMaxHeight => TextExpanded ? double.PositiveInfinity : 100;
+    public string TextToggleLabel => TextExpanded ? "收起" : "展开全文";
+
+    [RelayCommand]
+    private void ToggleText() => TextExpanded = !TextExpanded;
     public ObservableCollection<FileItemViewModel> Files { get; } = [];
 
     public static MessageViewModel From(TimelineRow row)
@@ -147,17 +189,42 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _inputText = "";
     [ObservableProperty] private string _statusText = "";
     [ObservableProperty] private bool _busy;
+    [ObservableProperty] private bool _sendBusy;
     [ObservableProperty] private bool _showLoadOlder = true;
     [ObservableProperty] private bool _showUnconfigured;
 
     private int _localOffset;
     private bool _localEndReached;
+    private bool _remoteEndReached;
+    private readonly Func<bool> _isConfigured;
+    private readonly Action<string, string>? _localFileAction;
+    public ObservableCollection<DraftAttachment> Attachments { get; } = [];
 
-    public MainViewModel()
+    public void AddAttachments(IEnumerable<string> paths, bool isTemporary = false)
     {
+        foreach (var path in paths)
+            if (!Attachments.Any(a => string.Equals(a.Path, path, StringComparison.OrdinalIgnoreCase)))
+                Attachments.Add(new DraftAttachment(path, isTemporary));
+    }
+
+
+    [RelayCommand]
+    private void RemoveAttachment(DraftAttachment? attachment)
+    {
+        if (SendBusy || attachment is null || !Attachments.Remove(attachment)) return;
+        if (attachment.IsTemporary)
+            try { File.Delete(attachment.Path); } catch (IOException) { }
+    }
+
+    partial void OnSendBusyChanged(bool value) => SendCommand.NotifyCanExecuteChanged();
+
+    public MainViewModel(Func<bool>? isConfigured = null, Action<string, string>? localFileAction = null)
+    {
+        _isConfigured = isConfigured ?? (() => AppSettings.Load().IsConfigured);
+        _localFileAction = localFileAction;
         RefreshAsyncCommand = new AsyncRelayCommand(RefreshAsync, () => !Busy);
         LoadOlderAsyncCommand = new AsyncRelayCommand(LoadOlderAsync, () => !Busy);
-        SendCommand = new AsyncRelayCommand(SendInputAsync, () => !Busy);
+        SendCommand = new AsyncRelayCommand(SendInputAsync, () => !SendBusy);
         DeleteCommand = new AsyncRelayCommand<string>(DeleteAsync);
         RetryCommand = new AsyncRelayCommand<string>(RetryAsync);
         ReloadFromDb();
@@ -173,12 +240,21 @@ public partial class MainViewModel : ObservableObject
 
     public void ReloadFromDb()
     {
-        Timeline.Clear();
-        _byId.Clear();
-        _localOffset = 0;
-        _localEndReached = false;
-        AppendLocalPage();
-        ShowUnconfigured = !AppSettings.Load().IsConfigured;
+        // Keep existing cards and expansion state so refresh does not reset the scroll viewer.
+        var limit = Math.Max(LocalPageSize, Timeline.Count);
+        var rows = _messages.TimelinePage(limit, 0);
+        var ids = rows.Select(row => row.Message.Id).ToHashSet();
+        foreach (var vm in Timeline.Where(vm => !ids.Contains(vm.Id)).ToList())
+        {
+            Timeline.Remove(vm);
+            _byId.Remove(vm.Id);
+        }
+        foreach (var row in rows)
+            InsertTimeline(row);
+        _localOffset = rows.Count;
+        _localEndReached = rows.Count < limit;
+        ShowLoadOlder = !_localEndReached || !_remoteEndReached;
+        ShowUnconfigured = !_isConfigured();
     }
 
     public void LoadMoreLocal()
@@ -196,7 +272,7 @@ public partial class MainViewModel : ObservableObject
             _localEndReached = true;
         foreach (var row in rows)
             InsertTimeline(row);
-        ShowLoadOlder = !_localEndReached;
+        ShowLoadOlder = !_localEndReached || !_remoteEndReached;
     }
 
     private void InsertTimeline(TimelineRow row)
@@ -236,6 +312,7 @@ public partial class MainViewModel : ObservableObject
                 };
                 fvm.ActionRequested += FileActionAsync;
                 fvm.OpenRequested += FileOpen;
+                fvm.QuickActionRequested += FileQuickAction;
                 vm.Files.Add(fvm);
             }
             fvm.RefreshState(row);
@@ -251,36 +328,56 @@ public partial class MainViewModel : ObservableObject
 
     public async Task SendInputAsync()
     {
+        if (SendBusy) return;
         var text = InputText;
-        if (text.Trim().Length == 0)
+        var attachments = Attachments.ToArray();
+        if (text.Trim().Length == 0 && attachments.Length == 0)
             return;
-        InputText = "";
-        var result = await Services.Send.EnqueueTextAsync(text);
-        if (!result.Ok)
+        SendBusy = true;
+        try
         {
-            StatusText = result.ErrorText ?? "发送失败";
-            NotifySend(false);
-            return;
+            var result = attachments.Length == 0
+                ? await Services.Send.EnqueueTextAsync(text)
+                : await Services.Send.EnqueueFilesAsync(attachments.Select(a => a.Path).ToArray(), text);
+            if (!result.Ok)
+            {
+                StatusText = result.ErrorText ?? "发送失败";
+                NotifySend(false);
+                return;
+            }
+            if (InputText == text) InputText = "";
+            foreach (var attachment in attachments) Attachments.Remove(attachment);
+            StatusText = "已加入 MiniDrop";
+            InsertTimeline(new TimelineRow(_messages.Get(result.MessageId!)!, _jobs.Get(result.MessageId!)));
+            NotifySend(true);
         }
-        InsertTimeline(new TimelineRow(_messages.Get(result.MessageId!)!, _jobs.Get(result.MessageId!)));
-        NotifySend(true);
+        catch (Exception)
+        {
+            StatusText = "发送失败，请重试";
+            NotifySend(false);
+        }
+        finally
+        {
+            SendBusy = false;
+        }
     }
 
-    public async Task SendFilesAsync(IReadOnlyList<string> paths, string? text)
+    public async Task<bool> SendFilesAsync(IReadOnlyList<string> paths, string? text)
     {
         if (paths.Count == 0)
-            return;
+            return false;
         StatusText = $"正在加入 {paths.Count} 个文件…";
         var result = await Services.Send.EnqueueFilesAsync(paths, text);
         if (!result.Ok)
         {
             StatusText = result.ErrorText ?? "发送失败";
             NotifySend(false);
-            return;
+            return false;
         }
         InsertTimeline(new TimelineRow(_messages.Get(result.MessageId!)!, _jobs.Get(result.MessageId!)));
         StatusText = $"已加入 {paths.Count} 个文件";
         NotifySend(true);
+        return true;
     }
 
     [RelayCommand]
@@ -293,6 +390,7 @@ public partial class MainViewModel : ObservableObject
         try
         {
             var outcome = await Services.Sync.RefreshAsync(CancellationToken.None);
+            _remoteEndReached = false;
             ReloadFromDb();
             StatusText = outcome.ScanError
                 ? "刷新失败，请检查网络"
@@ -315,6 +413,16 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     public async Task LoadOlderAsync()
     {
+        if (!_localEndReached)
+        {
+            LoadMoreLocal();
+            return;
+        }
+        if (_meta.Get(MetaDao.HistoryInitialized) != "1")
+        {
+            await RefreshAsync();
+            return;
+        }
         if (!EnsureConfigured())
             return;
         Busy = true;
@@ -322,6 +430,8 @@ public partial class MainViewModel : ObservableObject
         try
         {
             var outcome = await Services.Sync.LoadOlderAsync(CancellationToken.None);
+            _remoteEndReached = outcome.NoMore && !outcome.ScanError && outcome.Failed == 0;
+            ReloadFromDb();
             LoadMoreLocal();
             StatusText = outcome.ScanError
                 ? "加载失败，请检查网络"
@@ -394,10 +504,22 @@ public partial class MainViewModel : ObservableObject
     }
 
     private async void FileActionAsync(FileItemViewModel file)
+        => await RunFileActionAsync(file, "open");
+
+    private async void FileQuickAction(FileItemViewModel file, string action)
+        => await RunFileActionAsync(file, action);
+
+    public async Task RunFileActionAsync(FileItemViewModel file, string action)
     {
+        if (file.Busy) return;
         var row = _files.Get(file.FileId);
         if (row is null)
             return;
+        if (action == "open" && file.IsImage && row.SourcePath is { } source && File.Exists(source))
+        {
+            ShowImage(source, file.Name);
+            return;
+        }
         if (Services.Download.EnsureCacheConsistency(row))
         {
             row = _files.Get(file.FileId);
@@ -407,7 +529,7 @@ public partial class MainViewModel : ObservableObject
         }
         if (row.State == FileStates.Cached)
         {
-            FileOpen(file);
+            UseLocalFile(file, action);
             return;
         }
         if (row.State == FileStates.Downloading)
@@ -423,11 +545,53 @@ public partial class MainViewModel : ObservableObject
             if (fresh is not null)
                 file.RefreshState(fresh);
             StatusText = error ?? (step == DownloadService.DownloadStep.Completed ? "下载完成" : "");
+            if (step == DownloadService.DownloadStep.Completed) UseLocalFile(file, action);
         }
         finally
         {
             file.Busy = false;
         }
+    }
+
+    private void UseLocalFile(FileItemViewModel file, string action)
+    {
+        if (action == "download") return;
+        if (_localFileAction is not null && _files.Get(file.FileId)?.CachePath is { } localPath)
+        {
+            _localFileAction(localPath, action);
+            return;
+        }
+        if (action == "open")
+        {
+            if (file.IsImage && _files.Get(file.FileId)?.CachePath is { } imagePath) ShowImage(imagePath, file.Name);
+            else FileOpen(file);
+            return;
+        }
+        var path = _files.Get(file.FileId)?.CachePath;
+        if (path is null) return;
+        try
+        {
+            if (action == "copy")
+            {
+                var paths = new System.Collections.Specialized.StringCollection { path };
+                Clipboard.SetFileDropList(paths);
+                StatusText = "已复制文件，可直接粘贴";
+            }
+            else if (action == "reveal")
+            {
+                using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "explorer.exe", Arguments = $"/select,\"{path}\"", UseShellExecute = true,
+                });
+            }
+        }
+        catch { StatusText = "文件操作失败，请重试"; }
+    }
+
+    private static void ShowImage(string path, string name)
+    {
+        var window = new Views.ImagePreviewWindow(path, name) { Owner = System.Windows.Application.Current?.MainWindow };
+        window.ShowDialog();
     }
 
     private void FileOpen(FileItemViewModel file)
@@ -463,7 +627,7 @@ public partial class MainViewModel : ObservableObject
 
     private bool EnsureConfigured()
     {
-        if (AppSettings.Load().IsConfigured)
+        if (_isConfigured())
             return true;
         StatusText = "请先完成 WebDAV 设置";
         (System.Windows.Application.Current as App)?.ShowSettings();
@@ -489,15 +653,12 @@ public partial class MainViewModel : ObservableObject
     };
 
     /// <summary>本地状态轮询（仅读 SQLite，零网络）：刷新可见消息的上传/下载状态。</summary>
-    public void PollJobStates()
+    public void PollJobStates(IEnumerable<MessageViewModel>? visibleMessages = null)
     {
-        foreach (var vm in Timeline)
+        foreach (var vm in visibleMessages ?? Timeline)
         {
             var job = _jobs.Get(vm.Id);
-            if (job is not null)
-                vm.ApplyJob(job);
-            else if (vm.StatusText.StartsWith("正在上传") || vm.HasError)
-                vm.ApplyJob(null);
+            vm.ApplyJob(job);
 
             foreach (var f in vm.Files)
             {

@@ -40,20 +40,26 @@ class SendService(
     private val deviceId: suspend () -> String,
     private val deviceName: suspend () -> String,
     private val trigger: () -> Unit,
+    private val awaitReady: suspend () -> Unit = {},
 ) {
     suspend fun enqueueText(text: String): SendResult {
         if (text.isBlank()) return SendResult.Fail("内容为空")
         if (text.toByteArray(Charsets.UTF_8).size > Limits.MAX_TEXT_BYTES) {
-            return SendResult.Fail("文字太长（上限 100 KiB）")
+            return SendResult.Fail("文字太长，请缩短后重试")
         }
         return enqueue(text, emptyList())
     }
 
     suspend fun enqueueFiles(files: List<StagedFile>, text: String?): SendResult {
+        awaitReady()
         if (files.isEmpty()) return SendResult.Fail("没有文件")
         if (files.size > Limits.MAX_FILES) return SendResult.Fail("一次最多 ${Limits.MAX_FILES} 个文件")
+        if (text != null && text.toByteArray(Charsets.UTF_8).size > Limits.MAX_TEXT_BYTES) {
+            return SendResult.Fail("文字太长，请缩短后重试")
+        }
         val maxBytes = maxFileBytes()
         for (f in files) {
+            if (!MessageJson.isValidFileName(f.displayName)) return SendResult.Fail("文件名不支持，请改名后重试")
             if (f.file.length() > maxBytes) {
                 return SendResult.Fail("单个文件不能超过 ${maxBytes / (1024 * 1024)} MB")
             }
@@ -63,6 +69,7 @@ class SendService(
     }
 
     private suspend fun enqueue(text: String?, files: List<StagedFile>): SendResult {
+        awaitReady()
         val id = Ulid.newUlid()
         val month = UlidClock.monthOf(id)
         val now = nowUtcString()
@@ -199,7 +206,9 @@ class UploadPump(
             deviceName = msg.deviceName,
             createdAt = msg.createdAt,
             text = msg.text,
-            files = files.map { MessageJson.DraftFile(it.fileId, it.name, it.size, it.mime, it.sha256) },
+            files = db.fileDao().getByMessage(msg.id).map {
+                MessageJson.DraftFile(it.fileId, it.name, it.size, it.mime, it.sha256)
+            },
         )
         val putJson = client.put(RemotePaths.messagePath(msg.remoteMonth, msg.id), MessageJson.serialize(draft))
         if (putJson.ok) {
@@ -546,6 +555,8 @@ class StartupRecovery(
         var removed = 0
 
         for (id in db.messageDao().idsInMonthsUpTo(cutoffMonth)) {
+            // Pending/retry/failed shares remain recoverable even past message retention.
+            if (db.jobDao().getById(id) != null) continue
             val ts = com.minidrop.app.core.Ulid.timestampMs(id)
             if (ts != null && ts < cutoffMs) {
                 val files = db.fileDao().getByMessage(id)
@@ -558,8 +569,11 @@ class StartupRecovery(
         val staging = File(context.filesDir, "staging")
         if (staging.exists()) {
             val cutoff = nowMs - 48L * 3600 * 1000
+            val referenced = db.fileDao().referencedSourcePaths().map { File(it).absolutePath }.toHashSet()
             staging.listFiles()?.forEach { f ->
-                if (f.lastModified() < cutoff) try { f.delete() } catch (_: Exception) {}
+                if (f.isFile && f.lastModified() < cutoff && f.absolutePath !in referenced) {
+                    try { f.delete() } catch (_: Exception) {}
+                }
             }
         }
         return removed

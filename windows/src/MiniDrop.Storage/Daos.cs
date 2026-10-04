@@ -13,7 +13,8 @@ public sealed class MetaDao(Database db)
 
     public string? Get(string key)
     {
-        using var cmd = db.Connection.Cmd(null, "SELECT value FROM meta WHERE key = $k");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, "SELECT value FROM meta WHERE key = $k");
         cmd.Set("$k", key);
         var v = cmd.ExecuteScalar();
         return v is string s ? s : null;
@@ -22,7 +23,8 @@ public sealed class MetaDao(Database db)
     /// <summary>meta.value 列 NOT NULL：空值存空串；读取方用 IsNullOrEmpty 判断。</summary>
     public void Set(string key, string? value)
     {
-        using var cmd = db.Connection.Cmd(null,
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null,
             """
             INSERT INTO meta(key, value) VALUES($k, $v)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value
@@ -43,7 +45,8 @@ public sealed class MessageDao(Database db)
 {
     public void Insert(SqliteTransaction? tx, MessageRow m)
     {
-        using var cmd = db.Connection.Cmd(tx,
+        using var connection = tx is null ? db.OpenConnection() : null;
+        using var cmd = (tx?.Connection ?? connection!).Cmd(tx,
             """
             INSERT OR IGNORE INTO messages(id, remote_month, device_id, device_name, created_at, text, direction, received_at)
             VALUES($id, $month, $device_id, $device_name, $created_at, $text, $direction, $received_at)
@@ -61,7 +64,8 @@ public sealed class MessageDao(Database db)
 
     public MessageRow? Get(string id)
     {
-        using var cmd = db.Connection.Cmd(null, "SELECT id, remote_month, device_id, device_name, created_at, text, direction, received_at FROM messages WHERE id = $id");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, "SELECT id, remote_month, device_id, device_name, created_at, text, direction, received_at FROM messages WHERE id = $id");
         cmd.Set("$id", id);
         using var r = cmd.ExecuteReader();
         return r.Read() ? Read(r) : null;
@@ -69,14 +73,16 @@ public sealed class MessageDao(Database db)
 
     public bool Exists(string id)
     {
-        using var cmd = db.Connection.Cmd(null, "SELECT 1 FROM messages WHERE id = $id");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, "SELECT 1 FROM messages WHERE id = $id");
         cmd.Set("$id", id);
         return cmd.ExecuteScalar() is not null;
     }
 
     public void Delete(SqliteTransaction? tx, string id)
     {
-        using var cmd = db.Connection.Cmd(tx, "DELETE FROM messages WHERE id = $id");
+        using var connection = tx is null ? db.OpenConnection() : null;
+        using var cmd = (tx?.Connection ?? connection!).Cmd(tx, "DELETE FROM messages WHERE id = $id");
         cmd.Set("$id", id);
         cmd.ExecuteNonQuery();
     }
@@ -92,7 +98,8 @@ public sealed class MessageDao(Database db)
             ORDER BY m.created_at DESC, m.id DESC
             LIMIT $limit OFFSET $offset
             """;
-        using var cmd = db.Connection.Cmd(null, sql);
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, sql);
         cmd.Set("$limit", limit);
         cmd.Set("$offset", offset);
         using var r = cmd.ExecuteReader();
@@ -110,14 +117,16 @@ public sealed class MessageDao(Database db)
 
     public long Count()
     {
-        using var cmd = db.Connection.Cmd(null, "SELECT COUNT(*) FROM messages");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, "SELECT COUNT(*) FROM messages");
         return (long)cmd.ExecuteScalar()!;
     }
 
     /// <summary>构成"本地最近 limit 条"的月份集合（刷新停止规则用）。</summary>
     public IReadOnlyList<string> MonthsOfNewest(int limit)
     {
-        using var cmd = db.Connection.Cmd(null,
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null,
             "SELECT DISTINCT remote_month FROM (SELECT remote_month FROM messages ORDER BY created_at DESC, id DESC LIMIT $l) ORDER BY remote_month DESC");
         cmd.Set("$l", limit);
         using var r = cmd.ExecuteReader();
@@ -128,7 +137,8 @@ public sealed class MessageDao(Database db)
 
     public IReadOnlyList<string> IdsByMonth(string month)
     {
-        using var cmd = db.Connection.Cmd(null, "SELECT id FROM messages WHERE remote_month = $m");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, "SELECT id FROM messages WHERE remote_month = $m");
         cmd.Set("$m", month);
         using var r = cmd.ExecuteReader();
         var list = new List<string>();
@@ -139,7 +149,8 @@ public sealed class MessageDao(Database db)
     /// <summary>候选过期消息（month <= cutoffMonth 的行再按 ULID 时间戳精确过滤）。</summary>
     public IReadOnlyList<string> IdsInMonthsUpTo(string cutoffMonth)
     {
-        using var cmd = db.Connection.Cmd(null, "SELECT id FROM messages WHERE remote_month <= $m ORDER BY id");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, "SELECT id FROM messages WHERE remote_month <= $m ORDER BY id");
         cmd.Set("$m", cutoffMonth);
         using var r = cmd.ExecuteReader();
         var list = new List<string>();
@@ -159,7 +170,8 @@ public sealed class FileDao(Database db)
 {
     public void Insert(SqliteTransaction? tx, FileRow f)
     {
-        using var cmd = db.Connection.Cmd(tx,
+        using var connection = tx is null ? db.OpenConnection() : null;
+        using var cmd = (tx?.Connection ?? connection!).Cmd(tx,
             """
             INSERT OR REPLACE INTO files(file_id, message_id, idx, name, size, mime, sha256, direction, source_path, source_modified_at, cache_path, state)
             VALUES($fid, $mid, $idx, $name, $size, $mime, $sha, $direction, $source_path, $source_modified_at, $cache_path, $state)
@@ -170,7 +182,8 @@ public sealed class FileDao(Database db)
 
     public FileRow? Get(string fileId)
     {
-        using var cmd = db.Connection.Cmd(null, SelectSql + " WHERE file_id = $fid");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, SelectSql + " WHERE file_id = $fid");
         cmd.Set("$fid", fileId);
         using var r = cmd.ExecuteReader();
         return r.Read() ? Read(r) : null;
@@ -178,7 +191,8 @@ public sealed class FileDao(Database db)
 
     public IReadOnlyList<FileRow> GetByMessage(string messageId)
     {
-        using var cmd = db.Connection.Cmd(null, SelectSql + " WHERE message_id = $mid ORDER BY idx");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, SelectSql + " WHERE message_id = $mid ORDER BY idx");
         cmd.Set("$mid", messageId);
         using var r = cmd.ExecuteReader();
         var list = new List<FileRow>();
@@ -188,7 +202,8 @@ public sealed class FileDao(Database db)
 
     public void SetState(string fileId, string state)
     {
-        using var cmd = db.Connection.Cmd(null, "UPDATE files SET state = $s WHERE file_id = $fid");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, "UPDATE files SET state = $s WHERE file_id = $fid");
         cmd.Set("$s", state);
         cmd.Set("$fid", fileId);
         cmd.ExecuteNonQuery();
@@ -196,7 +211,8 @@ public sealed class FileDao(Database db)
 
     public void SetUploaded(string fileId, string sha256)
     {
-        using var cmd = db.Connection.Cmd(null, "UPDATE files SET state = 'uploaded', sha256 = $sha WHERE file_id = $fid");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, "UPDATE files SET state = 'uploaded', sha256 = $sha WHERE file_id = $fid");
         cmd.Set("$sha", sha256);
         cmd.Set("$fid", fileId);
         cmd.ExecuteNonQuery();
@@ -204,7 +220,8 @@ public sealed class FileDao(Database db)
 
     public void SetCachePath(string fileId, string cachePath, string state)
     {
-        using var cmd = db.Connection.Cmd(null, "UPDATE files SET cache_path = $p, state = $s WHERE file_id = $fid");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, "UPDATE files SET cache_path = $p, state = $s WHERE file_id = $fid");
         cmd.Set("$p", cachePath);
         cmd.Set("$s", state);
         cmd.Set("$fid", fileId);
@@ -213,7 +230,8 @@ public sealed class FileDao(Database db)
 
     public void SetStateBulk(SqliteTransaction? tx, string messageId, string from, string to)
     {
-        using var cmd = db.Connection.Cmd(tx, "UPDATE files SET state = $to WHERE message_id = $mid AND state = $from");
+        using var connection = tx is null ? db.OpenConnection() : null;
+        using var cmd = (tx?.Connection ?? connection!).Cmd(tx, "UPDATE files SET state = $to WHERE message_id = $mid AND state = $from");
         cmd.Set("$to", to);
         cmd.Set("$mid", messageId);
         cmd.Set("$from", from);
@@ -249,7 +267,8 @@ public sealed class JobDao(Database db)
 {
     public void Insert(SqliteTransaction? tx, JobRow j)
     {
-        using var cmd = db.Connection.Cmd(tx,
+        using var connection = tx is null ? db.OpenConnection() : null;
+        using var cmd = (tx?.Connection ?? connection!).Cmd(tx,
             """
             INSERT INTO upload_jobs(message_id, state, attempts, next_attempt_at, bytes_done, bytes_total, error_code, error_message, enqueued_at, updated_at)
             VALUES($mid, $state, $attempts, $next, $done, $total, $code, $msg, $enq, $upd)
@@ -260,7 +279,8 @@ public sealed class JobDao(Database db)
 
     public JobRow? Get(string messageId)
     {
-        using var cmd = db.Connection.Cmd(null, SelectSql + " WHERE message_id = $mid");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, SelectSql + " WHERE message_id = $mid");
         cmd.Set("$mid", messageId);
         using var r = cmd.ExecuteReader();
         return r.Read() ? Read(r) : null;
@@ -274,7 +294,7 @@ public sealed class JobDao(Database db)
     {
         var messageId = db.Write(tx =>
         {
-            using (var sel = db.Connection.Cmd(tx,
+            using (var sel = tx.Connection!.Cmd(tx,
                        """
                        SELECT message_id FROM upload_jobs
                        WHERE state = 'queued' OR (state = 'retry_wait' AND next_attempt_at <= $now)
@@ -285,7 +305,7 @@ public sealed class JobDao(Database db)
                 var id = sel.ExecuteScalar() as string;
                 if (id is null) return (string?)null;
 
-                using var upd = db.Connection.Cmd(tx,
+                using var upd = tx.Connection!.Cmd(tx,
                     "UPDATE upload_jobs SET state = 'uploading', error_code = NULL, error_message = NULL, updated_at = $u WHERE message_id = $mid AND state IN ('queued','retry_wait')");
                 upd.Set("$u", Now());
                 upd.Set("$mid", id);
@@ -298,7 +318,8 @@ public sealed class JobDao(Database db)
     public void SetState(string messageId, JobState state, int attempts, long? nextAttemptAt,
         long? bytesDone = null, string? errorCode = null, string? errorMessage = null)
     {
-        using var cmd = db.Connection.Cmd(null,
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null,
             """
             UPDATE upload_jobs
             SET state = $state, attempts = $attempts, next_attempt_at = $next,
@@ -319,7 +340,8 @@ public sealed class JobDao(Database db)
 
     public void SetProgress(string messageId, long bytesDone)
     {
-        using var cmd = db.Connection.Cmd(null, "UPDATE upload_jobs SET bytes_done = $d, updated_at = $u WHERE message_id = $mid");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, "UPDATE upload_jobs SET bytes_done = $d, updated_at = $u WHERE message_id = $mid");
         cmd.Set("$d", bytesDone);
         cmd.Set("$u", Now());
         cmd.Set("$mid", messageId);
@@ -328,14 +350,16 @@ public sealed class JobDao(Database db)
 
     public void Delete(string messageId)
     {
-        using var cmd = db.Connection.Cmd(null, "DELETE FROM upload_jobs WHERE message_id = $mid");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, "DELETE FROM upload_jobs WHERE message_id = $mid");
         cmd.Set("$mid", messageId);
         cmd.ExecuteNonQuery();
     }
 
     public int Count(JobState state)
     {
-        using var cmd = db.Connection.Cmd(null, "SELECT COUNT(*) FROM upload_jobs WHERE state = $s");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, "SELECT COUNT(*) FROM upload_jobs WHERE state = $s");
         cmd.Set("$s", StateStrings.Of(state));
         return (int)(long)cmd.ExecuteScalar()!;
     }
@@ -343,7 +367,8 @@ public sealed class JobDao(Database db)
     /// <summary>修改应用密码后：只重排 AUTH failed job。</summary>
     public void RequeueAuthFailed()
     {
-        using var cmd = db.Connection.Cmd(null,
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null,
             "UPDATE upload_jobs SET state = 'queued', attempts = 0, next_attempt_at = NULL, error_code = NULL, error_message = NULL, updated_at = $u WHERE state = 'failed' AND error_code = 'AUTH'");
         cmd.Set("$u", Now());
         cmd.ExecuteNonQuery();
@@ -352,7 +377,8 @@ public sealed class JobDao(Database db)
     /// <summary>最早的未到期 retry_wait 时间（毫秒时间戳）；无则返回 null。供泵定时醒来消费（§4.3）。</summary>
     public long? NextRetryWaitAt(long nowMs)
     {
-        using var cmd = db.Connection.Cmd(null,
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null,
             "SELECT MIN(next_attempt_at) FROM upload_jobs WHERE state = 'retry_wait' AND next_attempt_at > $now");
         cmd.Set("$now", nowMs);
         var v = cmd.ExecuteScalar();
@@ -362,7 +388,8 @@ public sealed class JobDao(Database db)
     /// <summary>用户点重试：指定 job 转 queued。</summary>
     public bool Requeue(string messageId)
     {
-        using var cmd = db.Connection.Cmd(null,
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null,
             "UPDATE upload_jobs SET state = 'queued', attempts = 0, next_attempt_at = NULL, error_code = NULL, error_message = NULL, updated_at = $u WHERE message_id = $mid AND state IN ('failed','retry_wait','uploading')");
         cmd.Set("$u", Now());
         cmd.Set("$mid", messageId);
@@ -372,7 +399,8 @@ public sealed class JobDao(Database db)
     /// <summary>启动恢复：uploading → queued；文件 uploading → pending。</summary>
     public int RecoverUploading()
     {
-        using var cmd = db.Connection.Cmd(null,
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null,
             "UPDATE upload_jobs SET state = 'queued', updated_at = $u WHERE state = 'uploading'");
         cmd.Set("$u", Now());
         return cmd.ExecuteNonQuery();
@@ -409,19 +437,19 @@ public sealed class RejectedDao(Database db)
     {
         db.Write(tx =>
         {
-            using (var sel = db.Connection.Cmd(tx, "SELECT remote_signature FROM rejected_items WHERE remote_path = $p"))
+            using (var sel = tx.Connection!.Cmd(tx, "SELECT remote_signature FROM rejected_items WHERE remote_path = $p"))
             {
                 sel.Set("$p", remotePath);
                 var prev = sel.ExecuteScalar() as string;
                 if (prev is not null && prev != signature)
                 {
-                    using var del = db.Connection.Cmd(tx, "DELETE FROM rejected_items WHERE remote_path = $p");
+                    using var del = tx.Connection!.Cmd(tx, "DELETE FROM rejected_items WHERE remote_path = $p");
                     del.Set("$p", remotePath);
                     del.ExecuteNonQuery();
                 }
             }
 
-            using (var up = db.Connection.Cmd(tx,
+            using (var up = tx.Connection!.Cmd(tx,
                        """
                        INSERT INTO rejected_items(remote_path, message_id, remote_signature, reason_code, fail_count, quarantined, last_failed_at)
                        VALUES($p, $mid, $sig, $reason, 1, 0, $now)
@@ -444,7 +472,8 @@ public sealed class RejectedDao(Database db)
 
     public bool IsQuarantined(string remotePath)
     {
-        using var cmd = db.Connection.Cmd(null, "SELECT quarantined FROM rejected_items WHERE remote_path = $p");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, "SELECT quarantined FROM rejected_items WHERE remote_path = $p");
         cmd.Set("$p", remotePath);
         return cmd.ExecuteScalar() is long q && q == 1;
     }
@@ -455,7 +484,8 @@ public sealed class RejectedDao(Database db)
     /// </summary>
     public bool ShouldSkip(string remotePath, string signature)
     {
-        using var cmd = db.Connection.Cmd(null,
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null,
             "SELECT quarantined, remote_signature FROM rejected_items WHERE remote_path = $p");
         cmd.Set("$p", remotePath);
         using var r = cmd.ExecuteReader();
@@ -469,14 +499,16 @@ public sealed class RejectedDao(Database db)
 
     public void Remove(string remotePath)
     {
-        using var cmd = db.Connection.Cmd(null, "DELETE FROM rejected_items WHERE remote_path = $p");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, "DELETE FROM rejected_items WHERE remote_path = $p");
         cmd.Set("$p", remotePath);
         cmd.ExecuteNonQuery();
     }
 
     public IReadOnlyList<RejectedRow> GetAll()
     {
-        using var cmd = db.Connection.Cmd(null,
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null,
             "SELECT remote_path, message_id, remote_signature, reason_code, fail_count, quarantined, last_failed_at FROM rejected_items ORDER BY last_failed_at DESC");
         using var r = cmd.ExecuteReader();
         var list = new List<RejectedRow>();
@@ -488,14 +520,16 @@ public sealed class RejectedDao(Database db)
     /// <summary>设置页"重试被拒绝条目"：清除 quarantine 并清零计数。</summary>
     public void ClearQuarantine()
     {
-        using var cmd = db.Connection.Cmd(null, "UPDATE rejected_items SET quarantined = 0, fail_count = 0");
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null, "UPDATE rejected_items SET quarantined = 0, fail_count = 0");
         cmd.ExecuteNonQuery();
     }
 
     /// <summary>应用升级且支持的 schema 版本变化时：清除版本类 quarantine。</summary>
     public void ClearVersionQuarantine()
     {
-        using var cmd = db.Connection.Cmd(null,
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null,
             "DELETE FROM rejected_items WHERE reason_code = 'SCHEMA_VERSION'");
         cmd.ExecuteNonQuery();
     }
@@ -505,7 +539,8 @@ public sealed class SyncMonthDao(Database db)
 {
     public (string? LastScan, string? ItemSig, string? TombSig) Get(string month)
     {
-        using var cmd = db.Connection.Cmd(null,
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null,
             "SELECT last_scanned_at, last_item_signature, last_tombstone_signature FROM sync_months WHERE month = $m");
         cmd.Set("$m", month);
         using var r = cmd.ExecuteReader();
@@ -515,7 +550,8 @@ public sealed class SyncMonthDao(Database db)
 
     public void MarkScanned(string month, string? itemSig, string? tombSig, string now)
     {
-        using var cmd = db.Connection.Cmd(null,
+        using var connection = db.OpenConnection();
+        using var cmd = connection.Cmd(null,
             """
             INSERT INTO sync_months(month, last_scanned_at, last_item_signature, last_tombstone_signature)
             VALUES($m, $now, $is, $ts)

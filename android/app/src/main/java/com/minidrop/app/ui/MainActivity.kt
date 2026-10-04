@@ -35,7 +35,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MaterialTheme {
+            MiniDropTheme {
                 Surface {
                     TimelineScreen(
                         onOpenSettings = { startActivity(android.content.Intent(this, SettingsActivity::class.java)) },
